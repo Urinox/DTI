@@ -95,3 +95,54 @@ export async function PUT(req: NextRequest) {
         }, { status: 500 })
     }
 }
+
+export async function GET(
+    request: Request,
+    { params }: { params: { userId: string } }
+) {
+    try {
+        const userId = parseInt(params.userId)
+        
+        // Verify the user exists first
+        const user = await prisma.user.findUnique({
+            where: { id: userId }
+        })
+        
+        if (!user) {
+            return NextResponse.json({ 
+                data: null, 
+                message: "User not found",
+                status: 404 
+            }, { status: 404 })
+        }
+        
+        // Fetch profile for this specific user
+        const profile = await prisma.profile.findUnique({
+            where: {
+                userId: userId  // Make sure this matches the user ID
+            }
+        })
+        
+        if (!profile) {
+            return NextResponse.json({ 
+                data: null, 
+                message: "Profile not found for this user",
+                status: 404 
+            }, { status: 404 })
+        }
+        
+        return NextResponse.json({ 
+            data: profile, 
+            message: "Success",
+            status: 200 
+        })
+        
+    } catch (error) {
+        console.error("Error fetching profile:", error)
+        return NextResponse.json({ 
+            error: error, 
+            message: "Server error",
+            status: 500 
+        }, { status: 500 })
+    }
+}

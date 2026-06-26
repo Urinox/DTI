@@ -24,30 +24,42 @@ export default function HomePage() {
         office: ""
     })
     
-    const { data: session } = useSession()
+// In HomePage component
+const { data: session } = useSession()
 
-    useEffect(() => {
-        if (session?.user?.id) {
-            fetchProfileData()
-        }
-    }, [session])
-
-    async function fetchProfileData() {
-        try {
-            const response = await axios.get(`/api/profile/${session?.user?.id}`)
-            if (response.data.data) {
-                setProfileData({
-                    name: response.data.data.name || "",
-                    email: response.data.data.email || "",
-                    division: response.data.data.division || "",
-                    designation: response.data.data.designation || "",
-                    office: response.data.data.office || ""
-                })
-            }
-        } catch (error) {
-            console.error("Error fetching profile:", error)
-        }
+useEffect(() => {
+    console.log('Full Session:', session)
+    console.log('User ID:', session?.user?.id)
+    console.log('Username:', session?.user?.username)
+    console.log('Role:', session?.user?.role)
+    
+    if (session?.user?.id) {
+        fetchProfileData()
     }
+}, [session])
+
+async function fetchProfileData() {
+    try {
+        console.log('Fetching profile for user ID:', session?.user?.id)
+        const response = await axios.get(`/api/profile/${session?.user?.id}`)
+        console.log('Profile API Response:', response.data)
+        
+        if (response.data.data) {
+            // Check if the profile data is actually for Francis
+            console.log('Profile data received:', response.data.data)
+            
+            setProfileData({
+                name: response.data.data.name || "",
+                email: response.data.data.email || "",
+                division: response.data.data.division || "",
+                designation: response.data.data.designation || "",
+                office: response.data.data.office || ""
+            })
+        }
+    } catch (error) {
+        console.error("Error fetching profile:", error)
+    }
+}
 
     function toggleBtn(btn:string){
         setProfile(btn == 'profile')
