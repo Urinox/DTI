@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Role{
+  id      Int     @id @default(autoincrement())
+  type    String
+  user    User[]
+}
+
+model User{
+  id          Int     @id @default(autoincrement())
+  username    String
+  password    String
+  role        Role    @relation(fields: [roleId], references: [id])
+  roleId      Int
+  profile     Profile?
+  overtime    Overtime_Request[]
+  passSlip    Pass_Slip[]
+  travelOrder Travel_Order[]
+  payroll     Payroll[]
+  dtr         DTR[]
+}
+
+model Profile{
+  id            Int     @id @default(autoincrement())
+  userId        Int     @unique
+  name          String
+  email         String
+  division      String
+  designation   String
+  office        String
+  user          User    @relation(fields: [userId], references: [id])
+}
+
+model Overtime_Request{
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  date        DateTime  @db.Date
+  startTime   DateTime  @db.Time()
+  endTime     DateTime  @db.Time()
+  purpose     String
+  status      String
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+model Pass_Slip{
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  date        DateTime  @db.Date
+  purpose     String
+  destination String
+  status      String
+  type        String
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+model Travel_Order{
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  startDate       DateTime  @db.Date
+  endDate         DateTime  @db.Date
+  purpose         String
+  expectedOutput  String
+  destination     String
+  status          String
+  user            User      @relation(fields: [userId], references: [id])
+}
+
+model Payroll{
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  startPeriod DateTime  @db.Date
+  endPeriod   DateTime  @db.Date
+  salary      Float
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+model DTR{
+  id      Int       @id @default(autoincrement())
+  date    DateTime  @db.Date
+  userId  Int
+  shift   Shift[]
+  user    User      @relation(fields: [userId], references: [id])
+}
+
+model Shift_Type{
+  id    Int       @id @default(autoincrement())
+  type  String
+  shift Shift[]
+}
+
+model Shift{
+  id        Int         @id @default(autoincrement())
+  shiftId   Int
+  dtrId     Int
+  timeIn    DateTime    @db.Time()
+  timeOut   DateTime    @db.Time()
+  shiftType Shift_Type  @relation(fields: [shiftId], references: [id])
+  dtr       DTR         @relation(fields: [dtrId], references: [id])
+}
