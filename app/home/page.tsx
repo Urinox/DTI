@@ -16,8 +16,10 @@ export default function HomePage() {
         email: '',
         division: '',
         designation: '',
-        office: ''
+        office: '',
+        username: '' 
     })
+    const [username, setUsername] = useState('User') // ✅ Add this state
     const [loading, setLoading] = useState(true)
     const [hasProfile, setHasProfile] = useState(false)
     const [isProfileRequired, setIsProfileRequired] = useState(false)
@@ -54,17 +56,37 @@ const getProfile = useCallback(async () => {
                 email: userData.email || '',
                 division: profile.division || '',
                 designation: profile.designation || '',
-                office: profile.office || ''
+                office: profile.office || '',
+                username: userData.username || '' 
             }
             
             setProfileData(newProfileData)
             setUsername(profile.name || userData.username || 'User')
             
-            // ✅ Update the profile data in the parent state
-            // The ProfileContent will receive this updated data via props
+            // ✅ Check if profile has a name (profile is complete)
+            const profileName = newProfileData.name?.trim() || ''
+            console.log('📋 Profile name:', profileName)
+            
+            if (profileName) {
+                console.log('✅ Profile found with name, setting hasProfile to true')
+                setHasProfile(true)
+                setIsProfileRequired(false)
+            } else {
+                console.log('📝 Profile has no name, setting hasProfile to false')
+                setHasProfile(false)
+                setIsProfileRequired(true)
+            }
+        } else {
+            console.log('📝 No profile data, setting hasProfile to false')
+            setHasProfile(false)
+            setIsProfileRequired(true)
         }
     } catch (error) {
         console.error('Error fetching profile:', error)
+        setHasProfile(false)
+        setIsProfileRequired(true)
+    } finally {
+        setLoading(false) // ✅ Make sure loading is set to false
     }
 }, [session])
 
@@ -127,11 +149,11 @@ const getProfile = useCallback(async () => {
                             </div>
                             <div className="bg-gray-50 p-3 rounded-lg">
                                 <p className="text-sm text-gray-500">Office</p>
-                                <p className="font-medium">{profileData.office}</p>
+                                <p className="font-medium">{profileData.office || 'Not specified'}</p>
                             </div>
                             <div className="bg-gray-50 p-3 rounded-lg">
                                 <p className="text-sm text-gray-500">Designation</p>
-                                <p className="font-medium">{profileData.designation}</p>
+                                <p className="font-medium">{profileData.designation || 'Not specified'}</p>
                             </div>
                             
                             <div className="flex gap-3">

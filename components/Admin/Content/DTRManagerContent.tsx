@@ -15,6 +15,7 @@ export default function DTRManagerContent() {
     const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
     const [editForm, setEditForm] = useState({
         employeeId: '',
+        username: '',
         name: '',
         email: '',
         division: '',
@@ -59,6 +60,7 @@ export default function DTRManagerContent() {
                 return {
                     id: user.id || '',
                     employeeId: employeeId,
+                    username: user.username || '',
                     name: user.profile?.name || user.username || 'Unknown',
                     email: user.email || '',
                     designation: user.profile?.designation || user.designation || 'N/A',
@@ -91,6 +93,7 @@ export default function DTRManagerContent() {
         setSelectedEmployee(employee)
         setEditForm({
             employeeId: employee.employeeId || '',
+            username: employee.username || '',
             name: employee.name || '',
             email: employee.email || '',
             division: employee.division || '',
@@ -114,8 +117,8 @@ export default function DTRManagerContent() {
         setIsLoading(true)
 
         // Validation
-        if (!editForm.employeeId || !editForm.name || !editForm.email || !editForm.designation) {
-            setEditError('Employee ID, Name, Email, and Designation are required')
+        if (!editForm.employeeId || !editForm.username || !editForm.name || !editForm.email || !editForm.designation) {
+            setEditError('Employee ID, Username, Name, Email, and Designation are required')
             setIsLoading(false)
             return
         }
@@ -130,6 +133,7 @@ export default function DTRManagerContent() {
         try {
             const payload: any = {
                 employeeId: editForm.employeeId,
+                username: editForm.username,
                 name: editForm.name,
                 email: editForm.email,
                 division: editForm.division || '',
@@ -194,6 +198,7 @@ export default function DTRManagerContent() {
                         <thead className='bg-gray-200 border-y-2 border-gray-300'>
                             <tr>
                                 <td className='pl-10 py-1 font-bold w-40'>Employee ID</td>
+                                <td className='pl-10 py-1 font-bold'>Username</td>
                                 <td className='pl-10 py-1 font-bold'>Name</td>
                                 <td className='pl-10 py-1 font-bold'>Email</td>
                                 <td className='pl-10 py-1 font-bold w-40'>Designation</td>
@@ -203,12 +208,13 @@ export default function DTRManagerContent() {
                         <tbody>
                             {currentEmployees.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className='text-center py-4 text-gray-500'>No employees found</td>
+                                    <td colSpan={6} className='text-center py-4 text-gray-500'>No employees found</td>
                                 </tr>
                             ) : (
                                 currentEmployees.map((employee) => (
                                     <tr key={employee.id} className='border-t-[1] border-gray-300 hover:bg-gray-50'>
                                         <td className='pl-10 py-1'>{employee.employeeId}</td>
+                                        <td className='pl-10 py-1'>{employee.username}</td>
                                         <td className='pl-10 py-1'>{employee.name}</td>
                                         <td className='pl-10 py-1'>{employee.email}</td>
                                         <td className='pl-10 py-1'>{employee.designation}</td>
@@ -306,6 +312,17 @@ export default function DTRManagerContent() {
                                     placeholder='e.g., 00001'
                                     required
                                     maxLength={5}
+                                />
+                            </div>
+                            
+                            <div>
+                                <label className='font-bold text-sm text-gray-700'>Username *</label>
+                                <input
+                                    type='text'
+                                    value={editForm.username}
+                                    onChange={(e) => setEditForm({...editForm, username: e.target.value})}
+                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                                    required
                                 />
                             </div>
                             

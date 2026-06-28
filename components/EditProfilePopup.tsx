@@ -9,6 +9,7 @@ interface ProfileData {
     division: string
     designation: string
     office: string
+    username: string
 }
 
 interface EditProfilePopupProps {
@@ -32,6 +33,7 @@ export default function EditProfilePopup({
     const [division, setDivision] = useState('')
     const [designation, setDesignation] = useState('')
     const [office, setOffice] = useState('')
+    const [username, setUsername] = useState('')
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState('')
     const [isNewProfile, setIsNewProfile] = useState(false)
@@ -65,6 +67,7 @@ export default function EditProfilePopup({
             setDivision(profileData.division || '')
             setDesignation(profileData.designation || '')
             setOffice(profileData.office || '')
+            setUsername(profileData.username || '')
             setIsNewProfile(false)
         } else {
             setIsNewProfile(true)
@@ -73,6 +76,7 @@ export default function EditProfilePopup({
             setDivision('')
             setDesignation('')
             setOffice('')
+            setUsername('')
         }
     }
 
@@ -112,6 +116,11 @@ export default function EditProfilePopup({
                 name: name, 
                 email: email, 
                 designation: designation
+            }
+            
+            // Only include username if it has a value
+            if (username) {
+                profileDataToSend.username = username
             }
             
             if (showDivisionField) {
@@ -170,6 +179,17 @@ export default function EditProfilePopup({
             )}
             
             <form onSubmit={handleSubmit} className='flex mx-5 gap-4 flex-col'>
+                <div className='flex gap-2 flex-col'>
+                    <label className='font-bold text-gray-700'>Username</label>
+                    <input
+                        type='text'
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        className='border py-2 border-gray-300 text-gray-700 rounded-lg px-5 outline-0 focus:ring-2 focus:ring-blue-500'
+                        placeholder="Enter your username (optional)"
+                    />
+                </div>
+                
                 <div className='flex gap-2 flex-col'>
                     <label className='font-bold text-gray-700'>Full Name *</label>
                     <input

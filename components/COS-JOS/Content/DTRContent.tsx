@@ -475,7 +475,7 @@ export default function DTRContent({username, userId}: {username: string, userId
 
     return(
         <div className='flex flex-col w-full bg-gray-200'>
-            <ContentHeader username={username} userId={userId} />
+            <ContentHeader />
             
             <div className='flex'>
                 <div className='flex flex-col bg-white items-center justify-center my-5 mx-10 px-10 py-5 gap-2 border border-black rounded-xl'>
@@ -486,13 +486,13 @@ export default function DTRContent({username, userId}: {username: string, userId
                     <div className='flex gap-4 mt-1'>
                         <span className={`text-sm font-semibold ${isMorningSession ? 'text-green-600' : 'text-gray-400'}`}>
                             Morning
-                            {isTimeInAM && !isTimeOutAM && ' (In)'}
-                            {isTimeOutAM && ' (Out)'}
+                            {isTimeInAM && !isTimeOutAM }
+                            {isTimeOutAM}
                         </span>
                         <span className={`text-sm font-semibold ${isAfternoonSession ? 'text-orange-600' : 'text-gray-400'}`}>
                             Afternoon
-                            {isTimeInPM && !isTimeOutPM && ' (In)'}
-                            {isTimeOutPM && ' (Out)'}
+                            {isTimeInPM && !isTimeOutPM }
+                            {isTimeOutPM}
                         </span>
                     </div>
 

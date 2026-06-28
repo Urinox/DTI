@@ -79,7 +79,7 @@ export async function POST(
         console.log('🔍 Updating profile for user ID:', userId)
         console.log('📌 URL parameter was:', userid)
 
-        const { name, email, division, office, designation } = await request.json()
+        const { name, email, division, office, designation, username } = await request.json()
         
         if (!name || !email || !designation) {
             return NextResponse.json({ 
@@ -105,6 +105,11 @@ export async function POST(
             'profile/designation': designation,
             email: email,
             updatedAt: new Date().toISOString()
+        }
+        
+        // ✅ Update username if provided
+        if (username !== undefined) {
+            updates.username = username
         }
         
         if (division !== undefined) {

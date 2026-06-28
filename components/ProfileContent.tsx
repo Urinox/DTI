@@ -12,6 +12,7 @@ interface ProfileData {
     division: string
     designation: string
     office: string
+    username: string  // ✅ Added username
 }
 
 export default function ProfileContent() {
@@ -25,7 +26,8 @@ export default function ProfileContent() {
         email: '',
         division: '',
         designation: '',
-        office: ''
+        office: '',
+        username: ''  // ✅ Added username
     })
     const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -52,7 +54,8 @@ export default function ProfileContent() {
                     email: profile.email || userData.email || '',
                     division: profile.division || '',
                     designation: profile.designation || '',
-                    office: profile.office || ''
+                    office: profile.office || '',
+                    username: userData.username || ''  // ✅ Added username
                 })
             }
         } catch (error) {
@@ -143,7 +146,7 @@ export default function ProfileContent() {
     if (loading) {
         return (
             <div className='flex flex-col w-full'>
-                <ContentHeader username="Loading..." />
+                <ContentHeader />
                 <div className='flex flex-col bg-white border-[1] mx-70 border-black rounded-xl my-10 p-5 shadow-lg'>
                     <div className='flex justify-center items-center py-10'>
                         <p className='text-gray-500'>Loading profile...</p>
@@ -155,7 +158,7 @@ export default function ProfileContent() {
 
     return(
         <div className='flex flex-col w-full'>
-            <ContentHeader username={profileData.name || 'User'} />
+            <ContentHeader />
             <div className='flex flex-col bg-white border-[1] mx-70 border-black rounded-xl my-10 p-5 shadow-lg'>
                 <div className='flex items-center gap-5'>
                     <div className='relative group'>
@@ -203,6 +206,7 @@ export default function ProfileContent() {
                     <div>
                         <p className='text-xl font-bold'>{profileData.name || 'No Name'}</p>
                         <p className='text-gray-600'>ID: #{session?.user?.id}</p>
+                        {profileData.username && <p className='text-gray-800 text-sm'>@{profileData.username}</p>}
                         <button onClick={() => setShow(!show)} className='flex items-center gap-2 bg-red-800 text-white rounded-lg px-5 py-1 cursor-pointer font-bold text-sm mt-1'>
                             <Image src='/user_edit.svg' width={16} height={16} alt='edit'/>
                             <p>Edit</p>
