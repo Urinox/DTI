@@ -1,14 +1,16 @@
-"use client"
+// app/page.tsx
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useSession } from "next-auth/react"
+import axios from "axios"
 import SettingContent from "@/components/SettingContent"
 import ProfileContent from "@/components/ProfileContent"
 import DropdownButton from "@/components/DropdownButton"
 import Image from "next/image"
 import SidebarButton from "@/components/SidebarButton"
-import {useState, useEffect} from "react"
 import DTRManagerContent from "@/components/Admin/Content/DTRManagerContent"
 import CalendarContent from "@/components/Admin/Content/CalendarContent"
-import { useSession } from "next-auth/react"
-import axios from "axios"
 
 export default function HomePage() {
     const [profile, setProfile] = useState(false)
@@ -24,44 +26,42 @@ export default function HomePage() {
         office: ""
     })
     
-// In HomePage component
-const { data: session } = useSession()
+    const { data: session } = useSession()
 
-useEffect(() => {
-    console.log('Full Session:', session)
-    console.log('User ID:', session?.user?.id)
-    console.log('Username:', session?.user?.username)
-    console.log('Role:', session?.user?.role)
-    
-    if (session?.user?.id) {
-        fetchProfileData()
-    }
-}, [session])
-
-async function fetchProfileData() {
-    try {
-        console.log('Fetching profile for user ID:', session?.user?.id)
-        const response = await axios.get(`/api/profile/${session?.user?.id}`)
-        console.log('Profile API Response:', response.data)
+    useEffect(() => {
+        console.log('Full Session:', session)
+        console.log('User ID:', session?.user?.id)
+        console.log('Username:', session?.user?.username)
+        console.log('Role:', session?.user?.role)
         
-        if (response.data.data) {
-            // Check if the profile data is actually for Francis
-            console.log('Profile data received:', response.data.data)
-            
-            setProfileData({
-                name: response.data.data.name || "",
-                email: response.data.data.email || "",
-                division: response.data.data.division || "",
-                designation: response.data.data.designation || "",
-                office: response.data.data.office || ""
-            })
+        if (session?.user?.id) {
+            fetchProfileData()
         }
-    } catch (error) {
-        console.error("Error fetching profile:", error)
-    }
-}
+    }, [session])
 
-    function toggleBtn(btn:string){
+    async function fetchProfileData() {
+        try {
+            console.log('Fetching profile for user ID:', session?.user?.id)
+            const response = await axios.get(`/api/profile/${session?.user?.id}`)
+            console.log('Profile API Response:', response.data)
+            
+            if (response.data.data) {
+                console.log('Profile data received:', response.data.data)
+                
+                setProfileData({
+                    name: response.data.data.name || "",
+                    email: response.data.data.email || "",
+                    division: response.data.data.division || "",
+                    designation: response.data.data.designation || "",
+                    office: response.data.data.office || ""
+                })
+            }
+        } catch (error) {
+            console.error("Error fetching profile:", error)
+        }
+    }
+
+    function toggleBtn(btn: string) {
         setProfile(btn == 'profile')
         setSettings(btn == 'settings')
         setManageDTR(btn == 'manage_dtr')

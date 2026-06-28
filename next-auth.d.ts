@@ -1,4 +1,4 @@
-// types/next-auth.d.ts
+// next-auth.d.ts
 import "next-auth"
 
 declare module "next-auth" {
@@ -6,17 +6,25 @@ declare module "next-auth" {
         id: string
         username: string
         role: string
-        name?: string
-        email?: string
+        profile?: {
+            name: string
+            division: string
+            designation: string
+            office: string
+        }
     }
     
     interface Session {
-        user: {
+        user: User & {
             id: string
             username: string
             role: string
-            name?: string
-            email?: string
+            profile?: {
+                name: string
+                division: string
+                designation: string
+                office: string
+            }
         }
     }
 }
@@ -26,5 +34,11 @@ declare module "next-auth/jwt" {
         id: string
         username: string
         role: string
+        profile?: {
+            name: string
+            division: string
+            designation: string
+            office: string
+        }
     }
 }

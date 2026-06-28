@@ -1,147 +1,129 @@
-import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
-import { prisma } from "@/lib/prisma"
-import bcrypt from "bcryptjs"
+// app/api/travel_order/update/route.ts
+import { NextRequest, NextResponse } from "next/server"
+import { database, ref, get, update } from '@/lib/firebase'
+import { auth } from '@/auth'
 
-export async function POST(req: NextRequest) {
-    try {
-        const { username, password } = await req.json()
-        
-        // Find user by username
-        const user = await prisma.user.findFirst({
-            where: {
-                username: username
-            },
-            include: {
-                role: true,
-                profile: true
-            }
-        })
-        
-        // Check if user exists
-        if (!user) {
-            return NextResponse.json({ 
-                message: "Invalid Username or Password", 
-                data: null,
-                status: 400 
-            }, { status: 400 })
-        }
-        
-        // Compare password (supports both plain text and hashed)
-        let isValid = false
-        
-        // Check if password is hashed (bcrypt hash starts with $2)
-        if (user.password.startsWith('$2')) {
-            isValid = await bcrypt.compare(password, user.password)
-        } else {
-            // Plain text comparison (for existing data)
-            isValid = user.password === password
-        }
-        
-        if (!isValid) {
-            return NextResponse.json({ 
-                message: "Invalid Username or Password", 
-                data: null,
-                status: 400 
-            }, { status: 400 })
-        }
-        
-        // Return user without password
-        const { password: _, ...userWithoutPassword } = user
-        
-        return NextResponse.json({ 
-            data: userWithoutPassword, 
-            message: "Success", 
-            status: 200 
-        })
-        
-    } catch (error) {
-        console.error("Login error:", error)
-        return NextResponse.json({ 
-            error: error, 
-            message: "Server error",
-            status: 500 
-        }, { status: 500 })
-    }
-}
-
-export async function PUT(req: NextRequest) {
-    try {
-        const { id, password } = await req.json()
-        
-        // Hash the password before storing
-        const hashedPassword = await bcrypt.hash(password, 10)
-        
-        await prisma.user.update({
-            where: {
-                id: parseInt(id)
-            },
-            data: {
-                password: hashedPassword
-            }
-        })
-        
-        return NextResponse.json({ 
-            message: "Success", 
-            status: 200 
-        })
-        
-    } catch (error) {
-        console.error("Update password error:", error)
-        return NextResponse.json({ 
-            error: error, 
-            message: "Server error",
-            status: 500 
-        }, { status: 500 })
-    }
-}
-
-export async function GET(
-    request: Request,
-    { params }: { params: { userId: string } }
+export async function PUT(
+    request: NextRequest
 ) {
     try {
-        const userId = parseInt(params.userId)
-        
-        // Verify the user exists first
-        const user = await prisma.user.findUnique({
-            where: { id: userId }
-        })
-        
-        if (!user) {
+        const session = await auth()
+        if (!session?.user?.id) {
             return NextResponse.json({ 
                 data: null, 
-                message: "User not found",
-                status: 404 
-            }, { status: 404 })
+                message: "Unauthorized",
+                status: 401 
+            }, { status: 401 })
         }
+
+        // ✅ Get the role from session
+        const userRole = session.user.role
+        console.log('👤 Update route - User Role:', userRole)
         
-        // Fetch profile for this specific user
-        const profile = await prisma.profile.findUnique({
-            where: {
-                userId: userId  // Make sure this matches the user ID
+        // ✅ Check for ALL possible role variations
+        const isDivisionHead = userRole === 'division-head' || userRole === 'division'
+        const isProvincialDirector = userRole === 'provincial-director' || userRole === 'sub'
+        const isAdmin = userRole === 'admin'
+        
+        console.log('🔍 Role checks - isDivisionHead:', isDivisionHead, 'isProvincialDirector:', isProvincialDirector, 'isAdmin:', isAdmin)
+        
+        // Allow Division Head, Provincial Director, Admin to approve/disapprove
+        if (!isDivisionHead && !isProvincialDirector && !isAdmin) {
+            console.log('❌ Unauthorized role:', userRole)
+            return NextResponse.json({ 
+                data: null, 
+                message: `Only Division Heads, Provincial Directors, and Admins can approve/disapprove. Your role: ${userRole}`,
+                status: 403 
+            }, { status: 403 })
+        }
+
+        const { requestId, status } = await request.json()
+        console.log('📋 Update request - requestId:', requestId, 'status:', status)
+        
+        if (!requestId || !status) {
+            return NextResponse.json({ 
+                data: null,
+                message: "Request ID and status are required",
+                status: 400 
+            }, { status: 400 })
+        }
+
+        // Find which user this request belongs to
+        const usersRef = ref(database, 'users')
+        const usersSnapshot = await get(usersRef)
+        
+        let foundUserId = null
+        let foundRequest = null
+        
+        if (usersSnapshot.exists()) {
+            const usersData = usersSnapshot.val()
+            for (const [uid, userData] of Object.entries(usersData)) {
+                const user = userData as any
+                if (user.travel_orders) {
+                    // Check if the request exists in this user's travel_orders
+                    if (user.travel_orders[requestId]) {
+                        foundUserId = uid
+                        foundRequest = user.travel_orders[requestId]
+                        break
+                    }
+                    
+                    // Also check if it might be a single object directly under travel_orders
+                    if (user.travel_orders.updatedAt) {
+                        // This is a single travel order object
+                        foundUserId = uid
+                        foundRequest = user.travel_orders
+                        break
+                    }
+                }
             }
-        })
+        }
         
-        if (!profile) {
+        if (!foundUserId || !foundRequest) {
+            console.log('❌ Travel order not found for ID:', requestId)
             return NextResponse.json({ 
-                data: null, 
-                message: "Profile not found for this user",
+                data: null,
+                message: "Travel order not found",
                 status: 404 
             }, { status: 404 })
         }
+
+        console.log('✅ Found travel order for user:', foundUserId)
+
+        // Update the travel order
+        const travelRef = ref(database, `users/${foundUserId}/travel_orders/${requestId}`)
+        
+        // If it's a single object, we need to update it differently
+        if (foundRequest.updatedAt && !foundRequest.startDate) {
+            // This is a single object, update the whole thing
+            await update(travelRef, {
+                status: status,
+                reviewedBy: session.user.username || session.user.email,
+                reviewedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            })
+        } else {
+            // Normal update
+            await update(travelRef, {
+                status: status,
+                reviewedBy: session.user.username || session.user.email,
+                reviewedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            })
+        }
+        
+        console.log('✅ Travel order updated successfully')
         
         return NextResponse.json({ 
-            data: profile, 
-            message: "Success",
+            data: { id: requestId },
+            message: `Travel order ${status} successfully`,
             status: 200 
         })
         
-    } catch (error) {
-        console.error("Error fetching profile:", error)
+    } catch (error: any) {
+        console.error("❌ Error updating travel order:", error)
         return NextResponse.json({ 
-            error: error, 
-            message: "Server error",
+            data: null,
+            message: "Server error: " + error.message,
             status: 500 
         }, { status: 500 })
     }

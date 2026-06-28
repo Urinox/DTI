@@ -12,6 +12,7 @@ import {useState, useEffect} from "react"
 import {useSession} from "next-auth/react"
 import Loading from "@/components/Loading"
 import axios from "axios"
+import {useRouter} from "next/navigation"
 
 interface Profile {
     name: string;
@@ -19,6 +20,34 @@ interface Profile {
     division: string;
     designation: string;
     office: string;
+}
+
+interface OvertimeRequest {
+    id: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    purpose: string;
+    status: string;
+}
+
+interface PassSlip {
+    id: string;
+    date: string;
+    purpose: string;
+    destination: string;
+    type: string;
+    status: string;
+}
+
+interface TravelOrder {
+    id: string;
+    startDate: string;
+    endDate: string;
+    purpose: string;
+    expectedOutput: string;
+    destination: string;
+    status: string;
 }
 
 export default function HomePage() {
@@ -31,73 +60,90 @@ export default function HomePage() {
     const [settings, setSettings] = useState(false)
 
     const {data: session, status} = useSession()
+    const router = useRouter()
 
-    const [profileData, setProfileData] = useState<Profile>({})
-    const [overtimeRequest, setOvertimeRequest] = useState([])
-    const [passSlipData, setPassSlipData] = useState([])
-    const [travelOrderData, setTravelOrderData] = useState([])
+    const [profileData, setProfileData] = useState<Profile>({
+        name: "",
+        email: "",
+        division: "",
+        designation: "",
+        office: ""
+    })
+    const [overtimeRequest, setOvertimeRequest] = useState<OvertimeRequest[]>([])
+    const [passSlipData, setPassSlipData] = useState<PassSlip[]>([])
+    const [travelOrderData, setTravelOrderData] = useState<TravelOrder[]>([])
     const [username, setUsername] = useState('')
     const [id, setId] = useState('')
 
     function checkUser(){
         if(status === 'unauthenticated') {
-            window.location.href = '/'
-        }else if(session){
-            if(session.user.role != "cos-jo"){
-                window.location.href = `/home/${session.user.role}`
+            router.push('/')
+        } else if(session?.user) {
+            if(session.user.role !== "cos-jo"){
+                router.push(`/home/${session.user.role}`)
             }
         }
     }
 
     async function getProfile(){
+        if (!id) return
         try{
             const data = await axios.get(`/api/profile/${id}`)
-            setProfileData(data.data.data)
+            if (data.data.data) {
+                setProfileData(data.data.data)
+            }
         } catch(err){
             console.log(err)
         }
     }
 
     async function getOvertimeRequest(){
+        if (!id) return
         try{
             const data = await axios.get(`/api/overtime_request/${id}`)
-            setOvertimeRequest(data.data.data)
+            setOvertimeRequest(data.data.data || [])
         } catch(err){
             console.log(err)
         }
     }
 
     async function getTravelOrder(){
+        if (!id) return
         try{
             const data = await axios.get(`/api/travel_order/${id}`)
-            setTravelOrderData(data.data.data)
+            setTravelOrderData(data.data.data || [])
         } catch(err){
             console.log(err)
         }
     }
 
     async function getPassSlip(){
+        if (!id) return
         try{
             const data = await axios.get(`/api/pass_slip/${id}`)
-            setPassSlipData(data.data.data)
+            setPassSlipData(data.data.data || [])
         } catch(err){
             console.log(err)
         }
     }
 
     async function getPayroll(){
-
+        console.log('Fetching payroll...')
     }
 
     useEffect(() => {
         checkUser()
-        if(session){
+        if(session?.user) {
             setId(session.user.id)
-            getProfile()
-            getOvertimeRequest()
-            getTravelOrder()
-            getPassSlip()
             setUsername(session.user.username)
+            
+            if (session.user.id) {
+                getProfile()
+                getOvertimeRequest()
+                getTravelOrder()
+                getPassSlip()
+                getPayroll()
+            }
         }
     }, [session, status]);
 
@@ -135,13 +181,18 @@ export default function HomePage() {
                     </div>
                 </div>
                 <div className='flex flex-1'>
-                    {dtr? <DTRContent username={username}/> : ''}
-                    {overtime? <OvertimeContent username={username} overtimeRequest={overtimeRequest} id={id} getOvertimeRequest={getOvertimeRequest}/> : ''}
-                    {passSlip? <PassSlipContent username={username} id={id} passSlip={passSlipData} getPassSlip={getPassSlip}/> : ''}
-                    {travelOrder? <TravelOrderContent username={username} id={id} travelOrder={travelOrderData} getTravelOrder={getTravelOrder}/> : ''}
-                    {payroll? <PayrollContent username={username}/> : ''}
-                    {profile? <ProfileContent username={username} profileData={profileData} id={id} getProfile={getProfile}/> : ''}
-                    {settings? <SettingContent username={username} id={id}/> : ''}
+                    {dtr? <DTRContent username={username} userId={id} /> : ''}
+                    {overtime? <OvertimeContent username={username} overtimeRequest={overtimeRequest} id={id} getOvertimeRequest={getOvertimeRequest} /> : ''}
+                    {passSlip? <PassSlipContent username={username} id={id} passSlip={passSlipData} getPassSlip={getPassSlip} /> : ''}
+                    {travelOrder? <TravelOrderContent username={username} id={id} travelOrder={travelOrderData} getTravelOrder={getTravelOrder} /> : ''}
+                    {payroll? <PayrollContent username={username} /> : ''}
+                    {profile && <ProfileContent 
+                        username={profileData.name || username} 
+                        profileData={profileData} 
+                        id={id} 
+                        getProfile={getProfile}
+                    />}
+                    {settings && <SettingContent username={username} id={id} />}
                 </div>
             </div>
         )

@@ -1,133 +1,216 @@
+// app/page.tsx
 "use client"
-import Image from "next/image"
-import { useState,useEffect } from "react"
-import {signIn} from "next-auth/react"
-import {useSession} from "next-auth/react"
-import Loading from "@/components/Loading"
-import axios from "axios";
 
+import Image from "next/image"
+import { useState, useEffect } from "react"
+import { signIn } from "next-auth/react"
+import { useSession } from "next-auth/react"
+import Loading from "@/components/Loading"
+import axios from "axios"
+import { useRouter } from "next/navigation"
 
 export default function Home() {
-    const [isUsernameFocused, setIsUsernameFocused] = useState(false)
+    const [isEmailFocused, setIsEmailFocused] = useState(false)
     const [isPassFocused, setIsPassFocused] = useState(false)
-    const [name, setName] = useState('')
+    const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [message, setMessage] = useState('')
     const [rq1, setRq1] = useState(false)
     const [rq2, setRq2] = useState(false)
     const [rq3, setRq3] = useState(false)
+    const [loading, setLoading] = useState(false)
 
-    const {data: session, status} = useSession()
+    const { data: session, status } = useSession()
+    const router = useRouter()
 
-    function checkPassword(password:string){
+    function checkPassword(password: string) {
         setPassword(password)
-        if(password.length >= 7){
+        if (password.length >= 7) {
             setRq1(true)
-        }else{
+        } else {
             setRq1(false)
         }
-        if(password.match(/[A-Z]/) && password.match(/[a-z]/)){
+        if (password.match(/[A-Z]/) && password.match(/[a-z]/)) {
             setRq2(true)
-        }else{
+        } else {
             setRq2(false)
         }
-        if(password.match(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/)){
+        if (password.match(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/)) {
             setRq3(true)
-        }else{
+        } else {
             setRq3(false)
         }
-        if (rq1 && rq2 && rq3) return true
-        return false
+        return rq1 && rq2 && rq3
     }
 
-    async function handleSubmit(e:any){
+    async function handleSubmit(e: any) {
         e.preventDefault()
-        if (!checkPassword(password)) return null
-        try{
-            const result = await signIn('credentials', {username: name, password: password, redirect: false})
-            if(result.error){
-                alert('Invalid Username or Password')
+        setLoading(true)
+        setMessage('')
+        
+        if (!checkPassword(password)) {
+            setMessage('Please meet all password requirements')
+            setLoading(false)
+            return
+        }
+        
+        try {
+            const result = await signIn('credentials', { 
+                username: email,
+                password: password, 
+                redirect: false 
+            })
+            
+            if (result?.error) {
+                setMessage('Invalid Email or Password')
+                setLoading(false)
             }
-        }catch (err){
+        } catch (err) {
             console.log(err)
+            setMessage('An error occurred during login')
+            setLoading(false)
         }
     }
 
-async function checkProfile(){
-    // Add this guard clause at the beginning
-    if (!session || !session.user) {
-        console.log('No session or user found');
-        return;
+    async function checkProfile() {
+        if (!session || !session.user) {
+            console.log('No session or user found')
+            return
+        }
+        
+        try {
+            const userId = session.user.id
+            console.log('✅ User authenticated:', userId)
+            console.log('Email:', session.user.email)
+            console.log('Role:', session.user.role)
+            
+            // ✅ Check if user exists in database first
+            const response = await axios.get(`/api/profile/${userId}`)
+            console.log('Profile check response:', response.data)
+            
+            const profile = response.data.data
+            const hasValidProfile = profile && profile.profile && profile.profile.name && profile.profile.name.trim() !== ''
+            
+            if (hasValidProfile) {
+                console.log('✅ Profile found with name, redirecting to dashboard')
+                router.push(`/home/${session.user.role}`)
+            } else {
+                console.log('📝 No profile or empty profile - redirecting to create profile')
+                router.push('/home')
+            }
+        } catch (error: any) {
+            console.log('📝 Error fetching profile - redirecting to create profile')
+            // If error (404, 403, etc.), redirect to create profile
+            router.push('/home')
+        }
     }
-    
-    const data = await axios.get(`/api/profile/${session.user.id}`)
-    if(data.data.data != null){
-        window.location.href = `/home/${session.user.role}`
-    }else{
-        window.location.href = '/home'
-    }
-}
 
     useEffect(() => {
-        if(session){
+        if (session && status === 'authenticated') {
             checkProfile()
         }
     }, [session, status])
 
-    if (status === 'loading' || status === 'authenticated') return <Loading/>
-
-    if(status === 'unauthenticated'){
-        return (
-            <main className='flex items-center justify-center h-screen bg-[rgba(3,7,61,1)]'>
-                <div className='bg-white flex items-center flex-col gap-8 py-5 px-10 rounded-lg'>
-                    <div className='flex gap-5'>
-                        <Image src={'/dti_logo.png'} width={70} height={70} alt='DTI Logo'/>
-                        <Image src={'/bagong_pilipinas_logo.png'} width={70} height={70} alt='Bagong Pilipinas Logo'/>
-                    </div>
-                    <p className='font-bold'>Please enter your details</p>
-                    <form
-                        onSubmit={handleSubmit}
-                        className='flex flex-col items-center w-full gap-5 mt-2'>
-                        <div className='flex items-center justify-center relative w-full mb-5'>
-                            <label className={`absolute left-0 transition-all duration-150 bottom-1
-                  ${isUsernameFocused || name ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>Username</label>
-                            <input
-                                required
-                                onFocus={() => setIsUsernameFocused(true)}
-                                onBlur={() => setIsUsernameFocused(false)}
-                                onChange={(e) => setName(e.target.value)}
-                                type="text" className={`border-b-[1] outline-0 w-full pb-1 text-sm
-                      ${isUsernameFocused || name ? 'border-blue-500' : 'border-gray-400'}`}/>
-                        </div>
-                        <div className='flex items-center justify-center relative w-full'>
-                            <label className={`absolute left-0 transition-all duration-150 bottom-1
-                  ${isPassFocused || password ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>Password</label>
-                            <input
-                                required
-                                onFocus={() => setIsPassFocused(true)}
-                                onBlur={() => setIsPassFocused(false)}
-                                onChange={(e) => checkPassword(e.target.value)}
-                                type="password" className={`border-b-[1] outline-0 w-full pb-1 text-sm
-                      ${isPassFocused || password ? 'border-blue-500' : 'border-gray-400'}`}/>
-                        </div>
-                        <div className='flex flex-col gap-2 w-full'>
-                            <div className='flex items-center gap-2'>
-                                <div className={`w-3 h-3 transition duration-300 rounded-full ${rq1 ? 'bg-green-300' : password != '' ? 'bg-red-300' : 'bg-gray-300'}`}></div>
-                                <p className={`text-sm transition duration-300 ${rq1 ? 'text-green-500' : password != '' ? 'text-red-500' : 'text-gray-800'}`}>Minimum of 7 characters</p>
-                            </div>
-                            <div className='flex items-center gap-2'>
-                                <div className={`w-3 h-3 transition duration-300 rounded-full ${rq2 ? 'bg-green-300' : password != '' ? 'bg-red-300' : 'bg-gray-300'}`}></div>
-                                <p className={`text-sm transition duration-300 ${rq2 ? 'text-green-500' : password != '' ? 'text-red-500' : 'text-gray-800'}`}>Must contain uppercase and lowercase</p>
-                            </div>
-                            <div className='flex items-center gap-2'>
-                                <div className={`w-3 h-3 transition duration-300 rounded-full ${rq3 ? 'bg-green-300' : password != '' ? 'bg-red-300' : 'bg-gray-300'}`}></div>
-                                <p className={`text-sm transition duration-300 ${rq3 ? 'text-green-500' : password != '' ? 'text-red-500' : 'text-gray-800'}`}>Must contain special character (e.g, -!@_#&)</p>
-                            </div>
-                        </div>
-                        <input className='bg-red-800 w-[80%] rounded-full py-1 font-semibold text-white cursor-pointer mb-5' type="submit" value="Log in"/>
-                    </form>
-                </div>
-            </main>
-        )
+    if (status === 'loading') {
+        return <Loading />
     }
+
+    if (status === 'authenticated') {
+        return <Loading />
+    }
+
+    return (
+        <main className='flex items-center justify-center h-screen bg-[rgba(3,7,61,1)]'>
+            <div className='bg-white flex items-center flex-col gap-8 py-5 px-10 rounded-lg min-w-[400px]'>
+                <div className='flex gap-5'>
+                    <Image src={'/dti_logo.png'} width={70} height={70} alt='DTI Logo'/>
+                    <Image src={'/bagong_pilipinas_logo.png'} width={70} height={70} alt='Bagong Pilipinas Logo'/>
+                </div>
+                <p className='font-bold text-gray-800'>Please enter your details</p>
+                
+                {message && (
+                    <div className={`w-full text-center text-sm p-2 rounded ${
+                        message.includes('Invalid') || message.includes('error') 
+                            ? 'bg-red-100 text-red-600' 
+                            : 'bg-yellow-100 text-yellow-600'
+                    }`}>
+                        {message}
+                    </div>
+                )}
+                
+                <form
+                    onSubmit={handleSubmit}
+                    className='flex flex-col items-center w-full gap-5 mt-2'>
+                    <div className='flex items-center justify-center relative w-full mb-5'>
+                        <label className={`absolute left-0 transition-all duration-150 bottom-1
+                            ${isEmailFocused || email ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>
+                            Email
+                        </label>
+                        <input
+                            required
+                            type="email"
+                            onFocus={() => setIsEmailFocused(true)}
+                            onBlur={() => setIsEmailFocused(false)}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className={`border-b-[1px] outline-0 w-full pb-1 text-sm
+                                ${isEmailFocused || email ? 'border-blue-500' : 'border-gray-400'}`}
+                        />
+                    </div>
+                    
+                    <div className='flex items-center justify-center relative w-full'>
+                        <label className={`absolute left-0 transition-all duration-150 bottom-1
+                            ${isPassFocused || password ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>
+                            Password
+                        </label>
+                        <input
+                            required
+                            onFocus={() => setIsPassFocused(true)}
+                            onBlur={() => setIsPassFocused(false)}
+                            onChange={(e) => checkPassword(e.target.value)}
+                            type="password" 
+                            className={`border-b-[1px] outline-0 w-full pb-1 text-sm
+                                ${isPassFocused || password ? 'border-blue-500' : 'border-gray-400'}`}
+                        />
+                    </div>
+                    
+                    <div className='flex flex-col gap-2 w-full'>
+                        <div className='flex items-center gap-2'>
+                            <div className={`w-3 h-3 transition duration-300 rounded-full 
+                                ${rq1 ? 'bg-green-300' : password != '' ? 'bg-red-300' : 'bg-gray-300'}`}>
+                            </div>
+                            <p className={`text-sm transition duration-300 
+                                ${rq1 ? 'text-green-500' : password != '' ? 'text-red-500' : 'text-gray-800'}`}>
+                                Minimum of 7 characters
+                            </p>
+                        </div>
+                        <div className='flex items-center gap-2'>
+                            <div className={`w-3 h-3 transition duration-300 rounded-full 
+                                ${rq2 ? 'bg-green-300' : password != '' ? 'bg-red-300' : 'bg-gray-300'}`}>
+                            </div>
+                            <p className={`text-sm transition duration-300 
+                                ${rq2 ? 'text-green-500' : password != '' ? 'text-red-500' : 'text-gray-800'}`}>
+                                Must contain uppercase and lowercase
+                            </p>
+                        </div>
+                        <div className='flex items-center gap-2'>
+                            <div className={`w-3 h-3 transition duration-300 rounded-full 
+                                ${rq3 ? 'bg-green-300' : password != '' ? 'bg-red-300' : 'bg-gray-300'}`}>
+                            </div>
+                            <p className={`text-sm transition duration-300 
+                                ${rq3 ? 'text-green-500' : password != '' ? 'text-red-500' : 'text-gray-800'}`}>
+                                Must contain special character (e.g, -!@_#&)
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <input 
+                        className='bg-red-800 w-[80%] rounded-full py-1 font-semibold text-white cursor-pointer mb-5 hover:bg-red-700 transition-colors disabled:opacity-50' 
+                        type="submit" 
+                        value={loading ? 'Logging in...' : 'Log in'}
+                        disabled={loading}
+                    />
+                </form>
+            </div>
+        </main>
+    )
 }

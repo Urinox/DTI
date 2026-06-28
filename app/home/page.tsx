@@ -1,130 +1,215 @@
+// app/home/page.tsx - Profile Creation Page
 "use client"
-import { useState,useEffect } from "react"
+
+import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
 import axios from "axios"
-import {useSession} from "next-auth/react"
+import { useSession } from "next-auth/react"
 import Loading from "@/components/Loading"
+import { useRouter } from "next/navigation"
+import EditProfilePopup from "@/components/EditProfilePopup"
 
-export default function Home() {
-    const [name, setName] = useState('')
-    const [email, setEmail] = useState('')
-    const [division, setDivision] = useState('')
-    const [office, setOffice] = useState('')
-    const [designation, setDesignation] = useState('')
-    const [isNameFocused, setIsNameFocused] = useState(false)
-    const [isEmailFocused, setIsEmailFocused] = useState(false)
-    const [isDivisionFocused, setIsDivisionFocused] = useState(false)
-    const [isOfficeFocused, setIsOfficeFocused] = useState(false)
-    const [isDesignationFocused, setIsDesignationFocused] = useState(false)
-
-    const {data: session, status} = useSession()
+export default function HomePage() {
+    const [showPopup, setShowPopup] = useState(false)
+    const [profileData, setProfileData] = useState({
+        name: '',
+        email: '',
+        division: '',
+        designation: '',
+        office: ''
+    })
     const [loading, setLoading] = useState(true)
+    const [hasProfile, setHasProfile] = useState(false)
+    const [isProfileRequired, setIsProfileRequired] = useState(false)
 
-    async function handleSubmit(e:any){
-        e.preventDefault()
-        try{
-            await axios.post(`/api/profile/${session.user.id}`, {
-                name: name,
-                email: email,
-                division: division,
-                office: office,
-                designation: designation
-            })
-            await checkProfile()
-        } catch (err){
-            console.log(err)
+    const { data: session, status } = useSession()
+    const router = useRouter()
+
+    // Map database roles to folder names
+    function getDashboardPath(role: string): string {
+        const roleMap: { [key: string]: string } = {
+            'admin': 'admin',
+            'provincial-director': 'provincial-director',
+            'division-head': 'division-head',
+            'cos': 'cos-jo',
+            'cos-jo': 'cos-jo',
+            'sub': 'provincial-director'
+        }
+        return roleMap[role] || 'cos-jo'
+    }
+
+const getProfile = useCallback(async () => {
+    if (!session?.user?.id) return
+    
+    try {
+        const response = await axios.get(`/api/profile/${session.user.id}`)
+        console.log('Profile response:', response.data)
+        
+        if (response.data?.data) {
+            const userData = response.data.data
+            const profile = userData.profile || {}
+            
+            const newProfileData = {
+                name: profile.name || userData.username || '',
+                email: userData.email || '',
+                division: profile.division || '',
+                designation: profile.designation || '',
+                office: profile.office || ''
+            }
+            
+            setProfileData(newProfileData)
+            setUsername(profile.name || userData.username || 'User')
+            
+            // ✅ Update the profile data in the parent state
+            // The ProfileContent will receive this updated data via props
+        }
+    } catch (error) {
+        console.error('Error fetching profile:', error)
+    }
+}, [session])
+
+    function togglePopup() {
+        if (isProfileRequired) {
+            if (hasProfile) {
+                setShowPopup(false)
+            } else {
+                alert('Please complete your profile to continue.')
+                return
+            }
+        } else {
+            setShowPopup(!showPopup)
         }
     }
 
-    async function checkProfile(){
-        const data = await axios.post(`/api/profile/${session.user.id}`)
-        if(data.data.data != null){
-            window.location.href = `/home/${session.user.role}`
-        }
+    function handleProfileSaved() {
+        setHasProfile(true)
+        setIsProfileRequired(false)
+        setShowPopup(false)
+        getProfile()
     }
 
     useEffect(() => {
-        if(status == 'unauthenticated') {
-            window.location.href = '/'
+        if (status === 'unauthenticated') {
+            router.push('/')
+            return
         }
-        setTimeout(() => {
+
+        if (session?.user?.id) {
+            getProfile()
+        } else {
             setLoading(false)
-        }, 3000)
-    }, [session, status]);
+        }
+    }, [session, status, router, getProfile])
 
-    if (status === 'loading' || !session || loading) return <Loading/>
+    if (status === 'loading' || loading) {
+        return <Loading />
+    }
 
-    return(
-        <main className='flex items-center justify-center h-screen bg-[rgba(3,7,61,1)]'>
-            <div className='bg-white flex items-center flex-col gap-8 py-5 px-10 rounded-lg w-96'>
+    return (
+        <main className='flex items-center justify-center min-h-screen bg-[rgba(3,7,61,1)] p-4'>
+            <div className='bg-white flex items-center flex-col gap-8 py-5 px-10 rounded-lg w-96 max-w-full'>
                 <div className='flex gap-5'>
                     <Image src={'/dti_logo.png'} width={70} height={70} alt='DTI Logo'/>
                     <Image src={'/bagong_pilipinas_logo.png'} width={70} height={70} alt='Bagong Pilipinas Logo'/>
                 </div>
-                <p className='font-bold'>Please enter your details</p>
-                <form onSubmit={handleSubmit} className='flex flex-col items-center w-full gap-5 mt-2'>
-                    <div className='flex items-center justify-center relative w-full mb-3'>
-                        <label className={`absolute left-0 transition-all duration-150 bottom-1
-                        ${isNameFocused || name ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>Name</label>
-                        <input
-                            required
-                            onFocus={() => setIsNameFocused(true)}
-                            onBlur={() => setIsNameFocused(false)}
-                            onChange={(e) => setName(e.target.value)}
-                            type="text"
-                            className={`border-b-[1] outline-0 w-full pb-1 text-sm
-                            ${isNameFocused || name ? 'border-blue-500' : 'border-gray-400'}`}/>
-                    </div>
-                    <div className='flex items-center justify-center relative w-full mb-3'>
-                        <label className={`absolute left-0 transition-all duration-150 bottom-1
-                        ${isEmailFocused || email ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>Email</label>
-                        <input
-                            required
-                            onFocus={() => setIsEmailFocused(true)}
-                            onBlur={() => setIsEmailFocused(false)}
-                            onChange={(e) => setEmail(e.target.value)}
-                            type="email"
-                            className={`border-b-[1] outline-0 w-full pb-1 text-sm
-                            ${isEmailFocused || email ? 'border-blue-500' : 'border-gray-400'}`}/>
-                    </div>
-                    <div className='flex items-center justify-center relative w-full mb-3'>
-                        <label className={`absolute left-0 transition-all duration-150 bottom-1
-                        ${isDivisionFocused || division ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>Division</label>
-                        <input
-                            onFocus={() => setIsDivisionFocused(true)}
-                            onBlur={() => setIsDivisionFocused(false)}
-                            onChange={(e) => setDivision(e.target.value)}
-                            type="text"
-                            className={`border-b-[1] outline-0 w-full pb-1 text-sm
-                            ${isDivisionFocused || division ? 'border-blue-500' : 'border-gray-400'}`}/>
-                    </div>
-                    <div className='flex items-center justify-center relative w-full mb-3'>
-                        <label className={`absolute left-0 transition-all duration-150 bottom-1
-                        ${isOfficeFocused || office ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>Office</label>
-                        <input
-                            required
-                            onFocus={() => setIsOfficeFocused(true)}
-                            onBlur={() => setIsOfficeFocused(false)}
-                            onChange={(e) => setOffice(e.target.value)}
-                            type="text"
-                            className={`border-b-[1] outline-0 w-full pb-1 text-sm
-                            ${isOfficeFocused || office ? 'border-blue-500' : 'border-gray-400'}`}/>
-                    </div>
-                    <div className='flex items-center justify-center relative w-full'>
-                        <label className={`absolute left-0 transition-all duration-150 bottom-1
-                        ${isDesignationFocused || designation ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>Designation</label>
-                        <input
-                            required
-                            onFocus={() => setIsDesignationFocused(true)}
-                            onBlur={() => setIsDesignationFocused(false)}
-                            onChange={(e) => setDesignation(e.target.value)}
-                            type="text"
-                            className={`border-b-[1] outline-0 w-full pb-1 text-sm
-                            ${isDesignationFocused || designation ? 'border-blue-500' : 'border-gray-400'}`}/>
-                    </div>
-                    <input className='bg-red-800 w-[80%] rounded-full py-1 font-semibold text-white cursor-pointer mb-5' type="submit" value="Log in"/>
-                </form>
+                
+                {hasProfile ? (
+                    <>
+                        <p className='font-bold text-gray-800 text-xl'>Welcome, {profileData.name || session?.user?.username}!</p>
+                        <div className="w-full space-y-3">
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                                <p className="text-sm text-gray-500">Email</p>
+                                <p className="font-medium">{profileData.email}</p>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                                <p className="text-sm text-gray-500">Division</p>
+                                <p className="font-medium">{profileData.division || 'Not specified'}</p>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                                <p className="text-sm text-gray-500">Office</p>
+                                <p className="font-medium">{profileData.office}</p>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                                <p className="text-sm text-gray-500">Designation</p>
+                                <p className="font-medium">{profileData.designation}</p>
+                            </div>
+                            
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => {
+                                        const dashboardPath = getDashboardPath(session?.user?.role || 'cos-jo')
+                                        router.push(`/home/${dashboardPath}`)
+                                    }}
+                                    className="flex-1 bg-red-800 text-white py-2 rounded-full font-semibold hover:bg-red-700 transition-colors"
+                                >
+                                    Go to Dashboard
+                                </button>
+                                <button
+                                    onClick={() => setShowPopup(true)}
+                                    className="px-4 bg-blue-600 text-white py-2 rounded-full font-semibold hover:bg-blue-700 transition-colors"
+                                >
+                                    Edit
+                                </button>
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="flex flex-col items-center gap-2">
+                            <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-2 rounded-lg text-sm text-center w-full">
+                                ⚠️ Profile Required
+                            </div>
+                            <p className='font-bold text-gray-800 text-xl'>Complete Your Profile</p>
+                            <p className='text-sm text-gray-500 text-center'>
+                                Welcome {session?.user?.username}! You must complete your profile before continuing.
+                            </p>
+                        </div>
+                        
+                        <button
+                            onClick={() => setShowPopup(true)}
+                            className="w-[80%] bg-red-800 text-white py-2 rounded-full font-semibold hover:bg-red-700 transition-colors"
+                        >
+                            Create Profile Now
+                        </button>
+                    </>
+                )}
             </div>
+
+            {/* Profile Popup */}
+            {showPopup && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="relative">
+                        {!isProfileRequired && (
+                            <button
+                                onClick={togglePopup}
+                                className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-lg hover:bg-gray-100"
+                            >
+                                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        )}
+                        {isProfileRequired && (
+                            <div className="absolute -top-2 -right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                                Required
+                            </div>
+                        )}
+                        <EditProfilePopup
+                            showPopup={() => {
+                                if (isProfileRequired) {
+                                    alert('Please complete your profile to continue.')
+                                    return
+                                }
+                                togglePopup()
+                            }}
+                            profileData={profileData}
+                            id={session?.user?.id || ''}
+                            getProfile={getProfile}
+                            onProfileSaved={handleProfileSaved}
+                        />
+                    </div>
+                </div>
+            )}
         </main>
     )
 }
