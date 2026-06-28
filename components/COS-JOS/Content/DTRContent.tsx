@@ -479,10 +479,9 @@ export default function DTRContent({username, userId}: {username: string, userId
             
             <div className='flex'>
                 <div className='flex flex-col bg-white items-center justify-center my-5 mx-10 px-10 py-5 gap-2 border border-black rounded-xl'>
-                    <Image src='/face.png' width={80} height={80} alt='face'/>
-                    <p className='font-bold text-2xl'>{formattedTime}</p>
-                    <p className='text-sm text-gray-500'>{formattedDate}</p>
-                    
+                    <p className='font-bold text-[36px]'>{formattedTime}</p>
+                    <p className='text-gray-800 text-[16px]'>{formattedDate}</p>
+                     
                     <div className='flex gap-4 mt-1'>
                         <span className={`text-sm font-semibold ${isMorningSession ? 'text-green-600' : 'text-gray-400'}`}>
                             Morning
