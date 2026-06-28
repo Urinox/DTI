@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
     
     // ✅ Remove console logs in production (keeps errors and warnings)
     compiler: {
-        removeConsole: true,
+       removeConsole: true,
     },
 };
 

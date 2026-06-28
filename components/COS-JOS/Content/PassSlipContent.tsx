@@ -25,7 +25,8 @@ export default function PassSlipContent({
 
     return (
         <div className={`flex flex-col w-full ${show ? 'overflow-hidden h-screen' : ''}`}>
-            <ContentHeader username={username} userId={id} />
+            {/* ✅ Remove username and userId props */}
+            <ContentHeader />
             <div className='flex flex-col my-5 mx-40 bg-white flex-1 rounded-xl border-[1] border-black shadow-xl shadow-gray-500/30'>
                 <div className='flex justify-between items-center p-5 border-b-[1] border-gray-300'>
                     <select

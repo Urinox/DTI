@@ -23,7 +23,7 @@ interface PayrollRecord {
     designation: string
 }
 
-export default function PayrollContent({username}:{username: string}) {
+export default function PayrollContent() {
     const { data: session } = useSession()
     const [show, setShow] = useState(false)
     const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([])
@@ -57,7 +57,7 @@ export default function PayrollContent({username}:{username: string}) {
                 netSalary: record.netSalary || 0,
                 status: record.status || 'Pending',
                 employeeId: record.employeeId || session.user.id,
-                employeeName: record.employeeName || session.user.name || username,
+                employeeName: record.employeeName || session.user.name || 'User',
                 designation: record.designation || ''
             }))
             
@@ -215,7 +215,7 @@ export default function PayrollContent({username}:{username: string}) {
     if (loading) {
         return (
             <div className='flex flex-col w-full'>
-                <ContentHeader username={username}/>
+                <ContentHeader />
                 <div className='flex flex-col bg-white py-5 my-5 mx-10 rounded-xl shadow-xl shadow-gray-500/30'>
                     <div className='flex justify-center items-center p-10'>
                         <p className='text-gray-500'>Loading...</p>
@@ -227,7 +227,7 @@ export default function PayrollContent({username}:{username: string}) {
 
     return(
         <div className='flex flex-col w-full'>
-            <ContentHeader username={username}/>
+            <ContentHeader />
             <div className='flex flex-col bg-white py-5 my-5 mx-10 rounded-xl shadow-xl shadow-gray-500/30'>
                 <p className='font-bold text-xl ml-5'>Payslips</p>
                 <div className='flex flex-col mb-3 mt-5 border-b-2 border-gray-300'>

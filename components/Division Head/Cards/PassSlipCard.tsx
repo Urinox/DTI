@@ -162,8 +162,8 @@ export default function PassSlipCard({ info, onApprove, onDisapprove }: PassSlip
                             />
                         </>
                     )}
-                    {/* ✅ Show status badge with mapped display */}
-                    {(isPendingProvincial || isApproved || isDisapproved || isPending) && (
+                    {/* ✅ Show status badge only for Approved or Disapproved */}
+                    {(isApproved || isDisapproved || isPendingProvincial) && (
                         <span className={`px-4 py-2 rounded-lg text-sm font-semibold ${getStatusColor(info.status)}`}>
                             {displayStatus}
                         </span>
