@@ -1,0 +1,22 @@
+// .swcrc
+{
+  "jsc": {
+    "parser": {
+      "syntax": "typescript",
+      "tsx": true
+    },
+    "transform": {
+      "optimizer": {
+        "globals": {
+          "vars": {
+            "console.log": "void 0",
+            "console.warn": "void 0",
+            "console.error": "void 0",
+            "console.info": "void 0",
+            "console.debug": "void 0"
+          }
+        }
+      }
+    }
+  }
+}
