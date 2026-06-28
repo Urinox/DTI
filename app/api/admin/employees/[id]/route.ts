@@ -1,9 +1,9 @@
-// app/api/admin/employees/[id]/route.ts (Without Admin SDK)
+// app/api/admin/employees/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server"
 import { database, ref, get, update, set } from '@/lib/firebase'
 import { auth } from '@/auth'
-import { getAuth, updatePassword, sendPasswordResetEmail } from 'firebase/auth'
-import { firebaseApp } from '@/lib/firebase'
+import { getAuth, sendPasswordResetEmail } from 'firebase/auth'
+import { app } from '@/lib/firebase'  // ✅ Import app instead of firebaseApp
 
 export async function PUT(
     request: NextRequest,
@@ -21,7 +21,8 @@ export async function PUT(
             }, { status: 401 })
         }
 
-        const { name, email, division, office, designation, password } = await request.json()
+        // ✅ Include username and employeeId
+        const { name, email, division, office, designation, password, username, employeeId } = await request.json()
         
         // Update user profile in database
         const userRef = ref(database, `users/${id}`)
@@ -38,22 +39,35 @@ export async function PUT(
         const updates: any = {
             'profile/name': name,
             'profile/designation': designation,
-            email: email
+            email: email,
+            updatedAt: new Date().toISOString()
         }
         
-        if (division) updates['profile/division'] = division
-        if (office) updates['profile/office'] = office
+        // ✅ Update username if provided
+        if (username !== undefined) {
+            updates.username = username
+        }
+        
+        // ✅ Update employeeId if provided
+        if (employeeId !== undefined) {
+            updates.employeeId = employeeId
+        }
+        
+        if (division !== undefined) {
+            updates['profile/division'] = division
+        }
+        
+        if (office !== undefined) {
+            updates['profile/office'] = office
+        }
         
         await update(userRef, updates)
 
-        // ✅ Alternative: Send password reset email instead of updating directly
+        // Send password reset email if password is provided
         if (password) {
             try {
-                // Use Firebase Client SDK to send password reset
-                const authInstance = getAuth()
+                const authInstance = getAuth(app)  // ✅ Use app from @/lib/firebase
                 await sendPasswordResetEmail(authInstance, email)
-                // This sends a password reset email to the user
-                // They can then set a new password themselves
             } catch (error) {
                 console.error('Error sending password reset:', error)
                 // Continue - profile was updated
@@ -68,6 +82,51 @@ export async function PUT(
         
     } catch (error: any) {
         console.error("❌ Error updating employee:", error)
+        return NextResponse.json({ 
+            data: null,
+            message: "Server error: " + error.message,
+            status: 500 
+        }, { status: 500 })
+    }
+}
+
+export async function DELETE(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const { id } = await params
+        const session = await auth()
+        
+        if (!session?.user?.id || session.user.role !== 'admin') {
+            return NextResponse.json({ 
+                data: null, 
+                message: "Unauthorized",
+                status: 401 
+            }, { status: 401 })
+        }
+
+        // Don't allow deleting yourself
+        if (id === session.user.id) {
+            return NextResponse.json({ 
+                data: null, 
+                message: "Cannot delete your own account",
+                status: 400 
+            }, { status: 400 })
+        }
+
+        // Delete user data from database
+        const userRef = ref(database, `users/${id}`)
+        await set(userRef, null)
+        
+        return NextResponse.json({ 
+            data: { id }, 
+            message: "Employee deleted successfully",
+            status: 200 
+        })
+        
+    } catch (error: any) {
+        console.error("❌ Error deleting employee:", error)
         return NextResponse.json({ 
             data: null,
             message: "Server error: " + error.message,
