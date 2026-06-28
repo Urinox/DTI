@@ -654,11 +654,11 @@ export default function DTRContent({username, userId}: {username: string, userId
                     <div className='flex gap-4 mt-1'>
                         <span className={`text-sm font-semibold ${isMorningSession ? 'text-green-600' : 'text-gray-400'}`}>
                             Morning
-                            {isTimeInAM && !isTimeOutAM ? ' (In)' : isTimeOutAM ? ' (Out)' : ''}
+                            {isTimeInAM && !isTimeOutAM ? '' : isTimeOutAM ? '' : ''}
                         </span>
                         <span className={`text-sm font-semibold ${isAfternoonSession ? 'text-orange-600' : 'text-gray-400'}`}>
                             Afternoon
-                            {isTimeInPM && !isTimeOutPM ? ' (In)' : isTimeOutPM ? ' (Out)' : ''}
+                            {isTimeInPM && !isTimeOutPM ? '' : isTimeOutPM ? '' : ''}
                         </span>
                     </div>
 
