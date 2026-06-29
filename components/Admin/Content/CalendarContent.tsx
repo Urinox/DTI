@@ -21,6 +21,7 @@ export default function CalendarContent() {
     const [eventDescription, setEventDescription] = useState('')
     const [loading, setLoading] = useState(true)
     const [showEventModal, setShowEventModal] = useState(false)
+    const [isViewOnly, setIsViewOnly] = useState(false)
 
     useEffect(() => {
         fetchEvents()
@@ -49,15 +50,13 @@ export default function CalendarContent() {
         const firstDay = new Date(year, month, 1)
         const lastDay = new Date(year, month + 1, 0)
         const daysInMonth = lastDay.getDate()
-        const startingDay = firstDay.getDay() // 0 = Sunday, 1 = Monday
+        const startingDay = firstDay.getDay()
         
-        // Adjust to make Monday the first day
         const startOffset = startingDay === 0 ? 6 : startingDay - 1
         
         const days = []
         const prevMonthDays = new Date(year, month, 0).getDate()
         
-        // Previous month days
         for (let i = startOffset - 1; i >= 0; i--) {
             const day = prevMonthDays - i
             const dateObj = new Date(year, month - 1, day)
@@ -69,7 +68,6 @@ export default function CalendarContent() {
             })
         }
         
-        // Current month days
         for (let i = 1; i <= daysInMonth; i++) {
             const dateObj = new Date(year, month, i)
             const today = new Date()
@@ -82,8 +80,7 @@ export default function CalendarContent() {
             })
         }
         
-        // Next month days
-        const totalDays = 42 // 6 rows
+        const totalDays = 42
         const remainingDays = totalDays - days.length
         for (let i = 1; i <= remainingDays; i++) {
             const dateObj = new Date(year, month + 1, i)
@@ -106,15 +103,33 @@ export default function CalendarContent() {
     }
 
     const handleDateClick = (date: Date) => {
-        if (!isEditing) return
-        
         const dateStr = date.toISOString().split('T')[0]
         const existingEvent = getEventForDate(date)
         
         setSelectedDate(dateStr)
-        setEventTitle(existingEvent?.title || '')
-        setEventDescription(existingEvent?.description || '')
-        setShowEventModal(true)
+        
+        // If there's an event and we're in edit mode, allow editing
+        if (existingEvent && isEditing) {
+            setEventTitle(existingEvent.title || '')
+            setEventDescription(existingEvent.description || '')
+            setIsViewOnly(false)
+            setShowEventModal(true)
+        } 
+        // If there's an event and we're NOT in edit mode, view only
+        else if (existingEvent && !isEditing) {
+            setEventTitle(existingEvent.title || '')
+            setEventDescription(existingEvent.description || '')
+            setIsViewOnly(true)
+            setShowEventModal(true)
+        }
+        // If no event and in edit mode, create new
+        else if (!existingEvent && isEditing) {
+            setEventTitle('')
+            setEventDescription('')
+            setIsViewOnly(false)
+            setShowEventModal(true)
+        }
+        // If no event and not in edit mode, do nothing
     }
 
     const handleSaveEvent = async () => {
@@ -135,6 +150,7 @@ export default function CalendarContent() {
                 setShowEventModal(false)
                 setEventTitle('')
                 setEventDescription('')
+                setIsViewOnly(false)
             }
         } catch (error) {
             console.error('Error saving event:', error)
@@ -153,11 +169,19 @@ export default function CalendarContent() {
                 setShowEventModal(false)
                 setEventTitle('')
                 setEventDescription('')
+                setIsViewOnly(false)
             }
         } catch (error) {
             console.error('Error deleting event:', error)
             alert('Error deleting event. Please try again.')
         }
+    }
+
+    const handleCloseModal = () => {
+        setShowEventModal(false)
+        setEventTitle('')
+        setEventDescription('')
+        setIsViewOnly(false)
     }
 
     const changeMonth = (direction: number) => {
@@ -244,9 +268,13 @@ export default function CalendarContent() {
                                     ${row < 6 ? 'border-b-[1]' : ''}
                                     ${!isCurrentMonth ? 'text-gray-300' : ''}
                                     ${isToday ? 'bg-blue-50' : ''}
-                                    ${isEditing && isCurrentMonth ? 'cursor-pointer hover:bg-blue-50' : ''}
+                                    ${(isEditing && isCurrentMonth) || (event && isCurrentMonth) ? 'cursor-pointer hover:bg-blue-50' : ''}
                                     ${event ? 'bg-yellow-50' : ''}`}
-                                    onClick={() => handleDateClick(dayData.date)}
+                                    onClick={() => {
+                                        if (isCurrentMonth && (isEditing || event)) {
+                                            handleDateClick(dayData.date)
+                                        }
+                                    }}
                                 >
                                     <p className='absolute top-1 left-2'>{dayData.day}</p>
                                     {event && (
@@ -267,9 +295,23 @@ export default function CalendarContent() {
             {/* Event Modal */}
             {showEventModal && (
                 <div className='fixed inset-0 bg-gray-700/50 flex items-center justify-center z-50'>
-                    <div className='bg-white rounded-lg border border-black py-6 w-[450px] shadow-2xl'>
+                    <div className='bg-white rounded-lg border border-black py-6 w-[450px] shadow-2xl relative'>
+                        {/* Close Button - X */}
+                        <button
+                            onClick={handleCloseModal}
+                            className='absolute top-3 right-4 text-gray-500 hover:text-gray-700 transition-colors'
+                            aria-label='Close'
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                        
                         <div className='flex pl-6 items-center w-full border-b border-gray-300 pb-4'>
-                            <p className='text-xl font-bold'>Event Details</p>
+                            <p className='text-xl font-bold'>
+                                {isViewOnly ? 'View Event' : 'Event Details'}
+                            </p>
                         </div>
                         
                         <div className='px-6 py-4 space-y-4'>
@@ -280,51 +322,73 @@ export default function CalendarContent() {
                             
                             <div>
                                 <label className='font-bold text-sm text-gray-700'>Event Title *</label>
-                                <input
-                                    type='text'
-                                    value={eventTitle}
-                                    onChange={(e) => setEventTitle(e.target.value)}
-                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
-                                    placeholder='Enter event title'
-                                />
+                                {isViewOnly ? (
+                                    <p className='text-gray-800 text-sm mt-1'>{eventTitle || 'No title'}</p>
+                                ) : (
+                                    <input
+                                        type='text'
+                                        value={eventTitle}
+                                        onChange={(e) => setEventTitle(e.target.value)}
+                                        className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                                        placeholder='Enter event title'
+                                    />
+                                )}
                             </div>
                             
                             <div>
                                 <label className='font-bold text-sm text-gray-700'>Description</label>
-                                <textarea
-                                    value={eventDescription}
-                                    onChange={(e) => setEventDescription(e.target.value)}
-                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm resize-none'
-                                    rows={3}
-                                    placeholder='Enter event description (optional)'
-                                />
+                                {isViewOnly ? (
+                                    <p className='text-gray-800 text-sm mt-1'>{eventDescription || 'No description'}</p>
+                                ) : (
+                                    <textarea
+                                        value={eventDescription}
+                                        onChange={(e) => setEventDescription(e.target.value)}
+                                        className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm resize-none'
+                                        rows={3}
+                                        placeholder='Enter event description (optional)'
+                                    />
+                                )}
                             </div>
                             
-                            <div className='flex justify-end gap-3 pt-4 border-t border-gray-200'>
-                                <button
-                                    type='button'
-                                    onClick={() => setShowEventModal(false)}
-                                    className='border border-gray-300 text-gray-700 rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-gray-100 transition-colors'
-                                >
-                                    Cancel
-                                </button>
-                                {eventTitle && (
+                            {!isViewOnly && (
+                                <div className='flex justify-end gap-3 pt-4 border-t border-gray-200'>
                                     <button
                                         type='button'
-                                        onClick={handleDeleteEvent}
-                                        className='bg-red-600 text-white rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-red-700 transition-colors'
+                                        onClick={handleCloseModal}
+                                        className='border border-gray-300 text-gray-700 rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-gray-100 transition-colors'
                                     >
-                                        Delete
+                                        Cancel
                                     </button>
-                                )}
-                                <button
-                                    type='button'
-                                    onClick={handleSaveEvent}
-                                    className='bg-blue-600 text-white rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-blue-700 transition-colors'
-                                >
-                                    Save Event
-                                </button>
-                            </div>
+                                    {eventTitle && (
+                                        <button
+                                            type='button'
+                                            onClick={handleDeleteEvent}
+                                            className='bg-red-600 text-white rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-red-700 transition-colors'
+                                        >
+                                            Delete
+                                        </button>
+                                    )}
+                                    <button
+                                        type='button'
+                                        onClick={handleSaveEvent}
+                                        className='bg-blue-600 text-white rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-blue-700 transition-colors'
+                                    >
+                                        Save Event
+                                    </button>
+                                </div>
+                            )}
+                            
+                            {isViewOnly && (
+                                <div className='flex justify-end gap-3 pt-4 border-t border-gray-200'>
+                                    <button
+                                        type='button'
+                                        onClick={handleCloseModal}
+                                        className='bg-blue-600 text-white rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-blue-700 transition-colors'
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
