@@ -21,11 +21,11 @@ const nextConfig: NextConfig = {
     
     // Output standalone for better deployment
     output: 'standalone',
-    /*
+
     // ✅ Remove console logs in production (keeps errors and warnings)
     compiler: {
        removeConsole: true,
-    },*/
+    },
 };
 
 export default nextConfig;
