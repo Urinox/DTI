@@ -23,7 +23,6 @@ export default function ContentHeader() {
                 const response = await axios.get(`/api/profile/${session.user.id}`)
                 if (response.data?.data) {
                     const userData = response.data.data
-                    // ✅ Use username from database, fallback to session username
                     const dbUsername = userData.username || userData.profile?.name || username
                     setDisplayName(dbUsername)
                 } else {
@@ -38,27 +37,58 @@ export default function ContentHeader() {
         fetchUsername()
     }, [session, username])
 
-    // ✅ Properly capitalize each word in the name (e.g., "george patrick t. salva" → "George Patrick T. Salva")
+    // ✅ Properly capitalize each word in the name
     const formatName = (name: string) => {
         if (!name) return 'User'
         
-        // Split by spaces and capitalize each word
         return name
             .split(' ')
             .map(word => {
-                // Handle special cases like "t." → "T."
                 if (word.includes('.')) {
                     return word.charAt(0).toUpperCase() + word.slice(1)
                 }
-                // Capitalize first letter, rest lowercase
                 return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
             })
             .join(' ')
     }
 
     async function handleLogout() {
-        await signOut({ redirect: false })
-        router.push('/')
+        try {
+            // ✅ Clear all browser storage
+            localStorage.clear()
+            sessionStorage.clear()
+            
+            // ✅ Clear all cookies (optional - NextAuth handles this)
+            document.cookie.split(";").forEach((c) => {
+                document.cookie = c
+                    .replace(/^ +/, "")
+                    .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/")
+            })
+            
+            // ✅ Clear cache (works in modern browsers)
+            if ('caches' in window) {
+                try {
+                    const cacheNames = await caches.keys()
+                    await Promise.all(cacheNames.map(name => caches.delete(name)))
+                } catch (err) {
+                    console.log('Could not clear cache:', err)
+                }
+            }
+            
+            // ✅ Sign out from NextAuth
+            await signOut({ 
+                redirect: false 
+            })
+            
+            // ✅ Force reload to clear any React state
+            window.location.href = '/'
+            
+        } catch (error) {
+            console.error('Error during logout:', error)
+            // Fallback logout
+            await signOut({ redirect: false })
+            window.location.href = '/'
+        }
     }
 
     return(
