@@ -165,139 +165,146 @@ export default function EditProfilePopup({
     }, [profileData])
 
     return (
-        <div className='flex flex-col bg-white gap-2 rounded-lg border border-black py-5 w-[35%] min-w-[400px] max-w-[500px] shadow-2xl'>
-            <div className='flex pl-5 items-center w-full border-b border-gray-300 pb-5'>
+        <div className='flex flex-col bg-white rounded-lg border border-black shadow-2xl max-h-[90vh] max-w-[500px] w-[90%]'>
+            {/* Header - Fixed */}
+            <div className='flex pl-5 items-center w-full border-b border-gray-300 py-4 flex-shrink-0'>
                 <p className='text-xl font-bold'>
                     {isNewProfile ? 'Create Profile' : 'Edit Profile'}
                 </p>
             </div>
             
+            {/* Error message - Fixed */}
             {error && (
-                <div className="mx-5 bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded text-sm">
+                <div className="mx-5 mt-3 bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded text-sm flex-shrink-0">
                     ❌ {error}
                 </div>
             )}
             
-            <form onSubmit={handleSubmit} className='flex mx-5 gap-4 flex-col'>
-                <div className='flex gap-2 flex-col'>
-                    <label className='font-bold text-gray-700'>Username</label>
-                    <input
-                        type='text'
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        className='border py-2 border-gray-300 text-gray-700 rounded-lg px-5 outline-0 focus:ring-2 focus:ring-blue-500'
-                        placeholder="Enter your username (optional)"
-                    />
-                </div>
-                
-                <div className='flex gap-2 flex-col'>
-                    <label className='font-bold text-gray-700'>Full Name *</label>
-                    <input
-                        required
-                        type='text'
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className='border py-2 border-gray-300 text-gray-700 rounded-lg px-5 outline-0 focus:ring-2 focus:ring-blue-500'
-                        placeholder="Enter your full name"
-                    />
-                </div>
-                
-                <div className='flex gap-2 flex-col'>
-                    <label className='font-bold text-gray-700'>Email *</label>
-                    <input
-                        required
-                        type='email'
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className='border py-2 border-gray-300 text-gray-700 rounded-lg px-5 outline-0 focus:ring-2 focus:ring-blue-500'
-                        placeholder="Enter your email"
-                    />
-                </div>
-                
-                {showDivisionField && (
-                    <div className='flex gap-2 flex-col'>
-                        <label className='font-bold text-gray-700'>Division</label>
+            {/* Scrollable Form */}
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+                <form onSubmit={handleSubmit} className='flex flex-col gap-3'>
+                    <div className='flex gap-1.5 flex-col'>
+                        <label className='font-bold text-gray-700 text-sm'>Username</label>
                         <input
                             type='text'
-                            value={division}
-                            onChange={(e) => setDivision(e.target.value)}
-                            className='border py-2 border-gray-300 text-gray-700 rounded-lg px-5 outline-0 focus:ring-2 focus:ring-blue-500'
-                            placeholder="Enter your division"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            className='border py-1.5 border-gray-300 text-gray-700 rounded-lg px-3 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                            placeholder="Enter your username (optional)"
                         />
                     </div>
-                )}
-                
-                {!isProvincialDirector && (
-                    <div className='flex gap-2 flex-col'>
-                        <label className='font-bold text-gray-700'>Office *</label>
-                        {isOfficeLocked ? (
-                            <input
-                                type='text'
-                                value={office}
-                                disabled
-                                className='border py-2 border-gray-300 text-gray-500 bg-gray-100 rounded-lg px-5 outline-0 cursor-not-allowed'
-                            />
-                        ) : showOfficeDropdown ? (
-                            <select
-                                required
-                                value={office}
-                                onChange={(e) => setOffice(e.target.value)}
-                                className='border py-2 border-gray-300 text-gray-700 rounded-lg px-5 outline-0 focus:ring-2 focus:ring-blue-500 appearance-none bg-white'
-                            >
-                                <option value="">Select your office</option>
-                                {municipalities.map((municipality) => (
-                                    <option key={municipality} value={municipality}>
-                                        {municipality}
-                                    </option>
-                                ))}
-                            </select>
-                        ) : (
-                            <input
-                                required
-                                type='text'
-                                value={office}
-                                onChange={(e) => setOffice(e.target.value)}
-                                className='border py-2 border-gray-300 text-gray-700 rounded-lg px-5 outline-0 focus:ring-2 focus:ring-blue-500'
-                                placeholder="Enter your office"
-                            />
-                        )}
-                        {isOfficeLocked && (
-                            <p className='text-xs text-gray-500 mt-1'>
-                                Office cannot be changed after it has been set.
-                            </p>
-                        )}
+                    
+                    <div className='flex gap-1.5 flex-col'>
+                        <label className='font-bold text-gray-700 text-sm'>Full Name *</label>
+                        <input
+                            required
+                            type='text'
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            className='border py-1.5 border-gray-300 text-gray-700 rounded-lg px-3 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                            placeholder="Enter your full name"
+                        />
                     </div>
-                )}
-                
-                <div className='flex gap-2 flex-col'>
-                    <label className='font-bold text-gray-700'>Designation *</label>
-                    <input
-                        required
-                        type='text'
-                        value={designation}
-                        onChange={(e) => setDesignation(e.target.value)}
-                        className='border py-2 border-gray-300 text-gray-700 rounded-lg px-5 outline-0 focus:ring-2 focus:ring-blue-500'
-                        placeholder="Enter your designation"
-                    />
-                </div>
-                
-                <div className='flex items-center w-full justify-end mt-2 gap-3'>
-                    <button
-                        type="button"
-                        onClick={showPopup}
-                        className='border border-gray-300 text-gray-700 rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-gray-100 transition-colors'
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="submit"
-                        disabled={isLoading}
-                        className='bg-red-800 text-white rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-red-700 transition-colors disabled:opacity-50'
-                    >
-                        {isLoading ? 'Saving...' : isNewProfile ? 'Create Profile' : 'Save Changes'}
-                    </button>
-                </div>
-            </form>
+                    
+                    <div className='flex gap-1.5 flex-col'>
+                        <label className='font-bold text-gray-700 text-sm'>Email *</label>
+                        <input
+                            required
+                            type='email'
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className='border py-1.5 border-gray-300 text-gray-700 rounded-lg px-3 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                            placeholder="Enter your email"
+                        />
+                    </div>
+                    
+                    {showDivisionField && (
+                        <div className='flex gap-1.5 flex-col'>
+                            <label className='font-bold text-gray-700 text-sm'>Division</label>
+                            <input
+                                type='text'
+                                value={division}
+                                onChange={(e) => setDivision(e.target.value)}
+                                className='border py-1.5 border-gray-300 text-gray-700 rounded-lg px-3 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                                placeholder="Enter your division"
+                            />
+                        </div>
+                    )}
+                    
+                    {!isProvincialDirector && (
+                        <div className='flex gap-1.5 flex-col'>
+                            <label className='font-bold text-gray-700 text-sm'>Office *</label>
+                            {isOfficeLocked ? (
+                                <input
+                                    type='text'
+                                    value={office}
+                                    disabled
+                                    className='border py-1.5 border-gray-300 text-gray-500 bg-gray-100 rounded-lg px-3 outline-0 cursor-not-allowed text-sm'
+                                />
+                            ) : showOfficeDropdown ? (
+                                <select
+                                    required
+                                    value={office}
+                                    onChange={(e) => setOffice(e.target.value)}
+                                    className='border py-1.5 border-gray-300 text-gray-700 rounded-lg px-3 outline-0 focus:ring-2 focus:ring-blue-500 appearance-none bg-white text-sm'
+                                >
+                                    <option value="">Select your office</option>
+                                    {municipalities.map((municipality) => (
+                                        <option key={municipality} value={municipality}>
+                                            {municipality}
+                                        </option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <input
+                                    required
+                                    type='text'
+                                    value={office}
+                                    onChange={(e) => setOffice(e.target.value)}
+                                    className='border py-1.5 border-gray-300 text-gray-700 rounded-lg px-3 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                                    placeholder="Enter your office"
+                                />
+                            )}
+                            {isOfficeLocked && (
+                                <p className='text-xs text-gray-500 mt-0.5'>
+                                    Office cannot be changed after it has been set.
+                                </p>
+                            )}
+                        </div>
+                    )}
+                    
+                    <div className='flex gap-1.5 flex-col'>
+                        <label className='font-bold text-gray-700 text-sm'>Designation *</label>
+                        <input
+                            required
+                            type='text'
+                            value={designation}
+                            onChange={(e) => setDesignation(e.target.value)}
+                            className='border py-1.5 border-gray-300 text-gray-700 rounded-lg px-3 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                            placeholder="Enter your designation"
+                        />
+                    </div>
+                </form>
+            </div>
+            
+            {/* Footer - Fixed */}
+            <div className='flex items-center w-full justify-end px-5 py-4 border-t border-gray-300 gap-3 flex-shrink-0'>
+                <button
+                    type="button"
+                    onClick={showPopup}
+                    className='border border-gray-300 text-gray-700 rounded-lg px-5 py-1.5 cursor-pointer font-bold text-sm hover:bg-gray-100 transition-colors'
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    onClick={handleSubmit}
+                    disabled={isLoading}
+                    className='bg-red-800 text-white rounded-lg px-5 py-1.5 cursor-pointer font-bold text-sm hover:bg-red-700 transition-colors disabled:opacity-50'
+                >
+                    {isLoading ? 'Saving...' : isNewProfile ? 'Create Profile' : 'Save Changes'}
+                </button>
+            </div>
         </div>
     )
 }
