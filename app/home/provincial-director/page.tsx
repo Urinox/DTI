@@ -12,7 +12,7 @@ import {useEffect, useState} from "react"
 import axios from "axios";
 import {useSession} from "next-auth/react";
 import Loading from "@/components/Loading";
-import {useRouter} from "next/navigation";
+import {useRouter, useSearchParams} from "next/navigation";
 
 interface Profile {
     name: string;
@@ -23,22 +23,18 @@ interface Profile {
 }
 
 export default function ProvincialDirectorDashboard() {
-    const [profile, setProfile] = useState(false)
-    const [settings, setSettings] = useState(false)
-    const [overtime, setOvertime] = useState(true)
-    const [passSlip, setPassSlip] = useState(false)
-    const [travelOrder, setTravelOrder] = useState(false)
+    const searchParams = useSearchParams()
+    const page = searchParams.get('page') || 'overtime'
+    
+    const [profile, setProfile] = useState(page === 'profile')
+    const [settings, setSettings] = useState(page === 'settings')
+    const [overtime, setOvertime] = useState(page === 'overtime')
+    const [passSlip, setPassSlip] = useState(page === 'pass_slip')
+    const [travelOrder, setTravelOrder] = useState(page === 'travel_order')
 
     const {data: session, status} = useSession()
     const router = useRouter()
 
-    const [profileData, setProfileData] = useState<Profile>({
-        name: "",
-        email: "",
-        division: "",
-        designation: "",
-        office: ""
-    })
     const [username, setUsername] = useState('')
     const [id, setId] = useState('')
 
@@ -48,38 +44,27 @@ export default function ProvincialDirectorDashboard() {
         }
     }
 
-    async function getProfile(){
-        if (!id) return
-        try{
-            const data = await axios.get(`/api/profile/${id}`)
-            if (data.data.data) {
-                setProfileData(data.data.data)
-            }
-        } catch(err){
-            console.log(err)
-        }
-    }
+    // Update state when URL parameter changes
+    useEffect(() => {
+        toggleBtn(page)
+    }, [page])
 
     useEffect(() => {
         checkUser()
         if(session?.user) {
             setId(session.user.id)
             setUsername(session.user.username)
-            
-            if (session.user.id) {
-                getProfile()
-            }
         }
     }, [session, status]);
 
     if(status === 'loading' || !session) return <Loading/>
 
     function toggleBtn(btn:string){
-        setProfile(btn == 'profile')
-        setSettings(btn == 'settings')
-        setOvertime(btn == 'overtime')
-        setPassSlip(btn == 'pass_slip')
-        setTravelOrder(btn == 'travel_order')
+        setProfile(btn === 'profile')
+        setSettings(btn === 'settings')
+        setOvertime(btn === 'overtime')
+        setPassSlip(btn === 'pass_slip')
+        setTravelOrder(btn === 'travel_order')
     }
 
     return(
@@ -95,19 +80,22 @@ export default function ProvincialDirectorDashboard() {
                             btnIcon='overtime.png' 
                             btnText='Overtime' 
                             selected={overtime} 
-                            onClick={() => toggleBtn('overtime')}
+                            href="/home/provincial-director?page=overtime"
+                            forceReload={true}
                         />
                         <SidebarButton 
                             btnIcon='pass_slip.png' 
                             btnText='Pass Slip' 
                             selected={passSlip} 
-                            onClick={() => toggleBtn('pass_slip')}
+                            href="/home/provincial-director?page=pass_slip"
+                            forceReload={true}
                         />
                         <SidebarButton 
                             btnIcon='travel_order.png' 
                             btnText='Travel Order' 
                             selected={travelOrder} 
-                            onClick={() => toggleBtn('travel_order')}
+                            href="/home/provincial-director?page=travel_order"
+                            forceReload={true}
                         />
                     </div>
                     <div className='flex flex-col w-full gap-1 px-3'>
@@ -115,13 +103,15 @@ export default function ProvincialDirectorDashboard() {
                             btnIcon='user.svg' 
                             btnText='Profile' 
                             selected={profile} 
-                            onClick={() => toggleBtn('profile')}
+                            href="/home/provincial-director?page=profile"
+                            forceReload={true}
                         />
                         <SidebarButton 
                             btnIcon='setting.png' 
                             btnText='Settings' 
                             selected={settings} 
-                            onClick={() => toggleBtn('settings')}
+                            href="/home/provincial-director?page=settings"
+                            forceReload={true}
                         />
                     </div>
                 </div>
@@ -136,12 +126,7 @@ export default function ProvincialDirectorDashboard() {
                     />
                 )}
                 {profile && (
-                    <ProfileContent 
-                        id={id} 
-                        username={username}
-                        profileData={profileData}
-                        getProfile={getProfile}
-                    />
+                    <ProfileContent />
                 )}
                 {overtime && (
                     <OvertimeContent 

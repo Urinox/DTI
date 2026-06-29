@@ -8,6 +8,8 @@ interface SidebarButtonProps {
     selected: boolean;
     onClick?: () => void;
     href?: string;
+    forceReload?: boolean;
+    cacheBust?: boolean;
 }
 
 export default function SidebarButton({ 
@@ -15,21 +17,29 @@ export default function SidebarButton({
     btnIcon, 
     selected, 
     onClick, 
-    href 
+    href,
+    forceReload = true,
+    cacheBust = false
 }: SidebarButtonProps) {
     const router = useRouter();
 
     const handleClick = () => {
-        // If custom onClick is provided, use it
         if (onClick) {
             onClick();
             return;
         }
 
-        // If href is provided, navigate and reload
         if (href) {
-            // Use window.location for a full page reload instead of router.push
-            window.location.href = href;
+            if (forceReload) {
+                if (cacheBust) {
+                    const url = href.includes('?') ? `${href}&_=${Date.now()}` : `${href}?_=${Date.now()}`;
+                    window.location.assign(url);
+                } else {
+                    window.location.href = href;
+                }
+            } else {
+                router.push(href);
+            }
         }
     };
 

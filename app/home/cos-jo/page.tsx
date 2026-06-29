@@ -12,7 +12,7 @@ import {useState, useEffect} from "react"
 import {useSession} from "next-auth/react"
 import Loading from "@/components/Loading"
 import axios from "axios"
-import {useRouter} from "next/navigation"
+import {useRouter, useSearchParams} from "next/navigation"
 
 interface Profile {
     name: string;
@@ -51,13 +51,16 @@ interface TravelOrder {
 }
 
 export default function HomePage() {
-    const [dtr, setDtr] = useState(true)
-    const [overtime, setOvertime] = useState(false)
-    const [passSlip, setPassSlip] = useState(false)
-    const [travelOrder, setTravelOrder] = useState(false)
-    const [payroll, setPayroll] = useState(false)
-    const [profile, setProfile] = useState(false)
-    const [settings, setSettings] = useState(false)
+    const searchParams = useSearchParams()
+    const page = searchParams.get('page') || 'dtr'
+    
+    const [dtr, setDtr] = useState(page === 'dtr')
+    const [overtime, setOvertime] = useState(page === 'overtime')
+    const [passSlip, setPassSlip] = useState(page === 'pass_slip')
+    const [travelOrder, setTravelOrder] = useState(page === 'travel_order')
+    const [payroll, setPayroll] = useState(page === 'payroll')
+    const [profile, setProfile] = useState(page === 'profile')
+    const [settings, setSettings] = useState(page === 'settings')
 
     const {data: session, status} = useSession()
     const router = useRouter()
@@ -131,6 +134,11 @@ export default function HomePage() {
         console.log('Fetching payroll...')
     }
 
+    // Update state when URL parameter changes
+    useEffect(() => {
+        toggleBtn(page)
+    }, [page])
+
     useEffect(() => {
         checkUser()
         if(session?.user) {
@@ -150,16 +158,16 @@ export default function HomePage() {
     if(status === 'loading' || !session) return <Loading/>
 
     function toggleBtn(btn:string){
-        setDtr(btn == 'dtr')
-        setOvertime(btn == 'overtime')
-        setPassSlip(btn == 'pass_slip')
-        setTravelOrder(btn == 'travel_order')
-        setPayroll(btn == 'payroll')
-        setProfile(btn == 'profile')
-        setSettings(btn == 'settings')
+        setDtr(btn === 'dtr')
+        setOvertime(btn === 'overtime')
+        setPassSlip(btn === 'pass_slip')
+        setTravelOrder(btn === 'travel_order')
+        setPayroll(btn === 'payroll')
+        setProfile(btn === 'profile')
+        setSettings(btn === 'settings')
     }
 
-    if(status == 'authenticated'){
+    if(status === 'authenticated'){
         return(
             <div className='flex'>
                 <div className='flex flex-col h-screen bg-black sticky top-0'>
@@ -168,31 +176,68 @@ export default function HomePage() {
                     </div>
                     <div className='flex flex-col justify-between flex-1 mb-10'>
                         <div className='flex flex-col w-full mt-2 gap-2'>
-                            <SidebarButton btnIcon='dtr.png' btnText='DTR' selected={dtr} onClick={() => toggleBtn('dtr')}/>
-                            <SidebarButton btnIcon='overtime.png' btnText='Overtime' selected={overtime} onClick={() => toggleBtn('overtime')}/>
-                            <SidebarButton btnIcon='pass_slip.png' btnText='Pass Slip' selected={passSlip} onClick={() => toggleBtn('pass_slip')}/>
-                            <SidebarButton btnIcon='travel_order.png' btnText='Travel Order' selected={travelOrder} onClick={() => toggleBtn('travel_order')}/>
-                            <SidebarButton btnIcon='payroll.png' btnText='Payroll' selected={payroll} onClick={() => toggleBtn('payroll')}/>
+                            <SidebarButton 
+                                btnIcon='dtr.png' 
+                                btnText='DTR' 
+                                selected={dtr} 
+                                href="/home/cos-jo?page=dtr"
+                                forceReload={true}
+                            />
+                            <SidebarButton 
+                                btnIcon='overtime.png' 
+                                btnText='Overtime' 
+                                selected={overtime} 
+                                href="/home/cos-jo?page=overtime"
+                                forceReload={true}
+                            />
+                            <SidebarButton 
+                                btnIcon='pass_slip.png' 
+                                btnText='Pass Slip' 
+                                selected={passSlip} 
+                                href="/home/cos-jo?page=pass_slip"
+                                forceReload={true}
+                            />
+                            <SidebarButton 
+                                btnIcon='travel_order.png' 
+                                btnText='Travel Order' 
+                                selected={travelOrder} 
+                                href="/home/cos-jo?page=travel_order"
+                                forceReload={true}
+                            />
+                            <SidebarButton 
+                                btnIcon='payroll.png' 
+                                btnText='Payroll' 
+                                selected={payroll} 
+                                href="/home/cos-jo?page=payroll"
+                                forceReload={true}
+                            />
                         </div>
                         <div className='flex flex-col w-full gap-2'>
-                            <SidebarButton btnIcon='user.svg' btnText='Profile' selected={profile} onClick={() => toggleBtn('profile')}/>
-                            <SidebarButton btnIcon='setting.png' btnText='Settings' selected={settings} onClick={() => toggleBtn('settings')}/>
+                            <SidebarButton 
+                                btnIcon='user.svg' 
+                                btnText='Profile' 
+                                selected={profile} 
+                                href="/home/cos-jo?page=profile"
+                                forceReload={true}
+                            />
+                            <SidebarButton 
+                                btnIcon='setting.png' 
+                                btnText='Settings' 
+                                selected={settings} 
+                                href="/home/cos-jo?page=settings"
+                                forceReload={true}
+                            />
                         </div>
                     </div>
                 </div>
                 <div className='flex flex-1'>
-                    {dtr? <DTRContent username={username} userId={id} /> : ''}
-                    {overtime? <OvertimeContent username={username} overtimeRequest={overtimeRequest} id={id} getOvertimeRequest={getOvertimeRequest} /> : ''}
-                    {passSlip? <PassSlipContent username={username} id={id} passSlip={passSlipData} getPassSlip={getPassSlip} /> : ''}
-                    {travelOrder? <TravelOrderContent username={username} id={id} travelOrder={travelOrderData} getTravelOrder={getTravelOrder} /> : ''}
-                    {payroll? <PayrollContent username={username} /> : ''}
-                    {profile && <ProfileContent 
-                        username={profileData.name || username} 
-                        profileData={profileData} 
-                        id={id} 
-                        getProfile={getProfile}
-                    />}
-                    {settings && <SettingContent username={username} id={id} />}
+                    {dtr ? <DTRContent username={username} userId={id} /> : ''}
+                    {overtime ? <OvertimeContent username={username} overtimeRequest={overtimeRequest} id={id} getOvertimeRequest={getOvertimeRequest} /> : ''}
+                    {passSlip ? <PassSlipContent username={username} id={id} passSlip={passSlipData} getPassSlip={getPassSlip} /> : ''}
+                    {travelOrder ? <TravelOrderContent username={username} id={id} travelOrder={travelOrderData} getTravelOrder={getTravelOrder} /> : ''}
+                    {payroll ? <PayrollContent /> : ''}
+                    {profile ? <ProfileContent /> : ''}
+                    {settings ? <SettingContent username={username} id={id} /> : ''}
                 </div>
             </div>
         )

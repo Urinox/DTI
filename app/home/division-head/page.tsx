@@ -10,23 +10,19 @@ import PassSlipContent from "@/components/Division Head/Content/PassSlipContent"
 import TravelOrderContent from "@/components/Division Head/Content/TravelOrderContent"
 import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Loading from "@/components/Loading"
 import axios from "axios"
 
 export default function HomePage() {
-    const [profile, setProfile] = useState(false)
-    const [settings, setSettings] = useState(false)
-    const [overtime, setOvertime] = useState(true)
-    const [passSlip, setPassSlip] = useState(false)
-    const [travelOrder, setTravelOrder] = useState(false)
-    const [profileData, setProfileData] = useState({
-        name: "",
-        email: "",
-        division: "",
-        designation: "",
-        office: ""
-    })
+    const searchParams = useSearchParams()
+    const page = searchParams.get('page') || 'overtime'
+    
+    const [profile, setProfile] = useState(page === 'profile')
+    const [settings, setSettings] = useState(page === 'settings')
+    const [overtime, setOvertime] = useState(page === 'overtime')
+    const [passSlip, setPassSlip] = useState(page === 'pass_slip')
+    const [travelOrder, setTravelOrder] = useState(page === 'travel_order')
     const [username, setUsername] = useState('')
     const [id, setId] = useState('')
 
@@ -41,33 +37,20 @@ export default function HomePage() {
         if (session?.user?.id) {
             setId(session.user.id)
             setUsername(session.user.username || 'User')
-            fetchProfileData()
         }
     }, [session, status, router])
 
-    async function fetchProfileData() {
-        try {
-            const response = await axios.get(`/api/profile/${session?.user?.id}`)
-            if (response.data.data) {
-                setProfileData({
-                    name: response.data.data.name || "",
-                    email: response.data.data.email || "",
-                    division: response.data.data.division || "",
-                    designation: response.data.data.designation || "",
-                    office: response.data.data.office || ""
-                })
-            }
-        } catch (error) {
-            console.error("Error fetching profile:", error)
-        }
-    }
+    // Update state when URL parameter changes
+    useEffect(() => {
+        toggleBtn(page)
+    }, [page])
 
     function toggleBtn(btn: string) {
-        setProfile(btn == 'profile')
-        setSettings(btn == 'settings')
-        setOvertime(btn == 'overtime')
-        setPassSlip(btn == 'pass_slip')
-        setTravelOrder(btn == 'travel_order')
+        setProfile(btn === 'profile')
+        setSettings(btn === 'settings')
+        setOvertime(btn === 'overtime')
+        setPassSlip(btn === 'pass_slip')
+        setTravelOrder(btn === 'travel_order')
     }
 
     if (status === 'loading') {
@@ -98,19 +81,22 @@ export default function HomePage() {
                             btnIcon='overtime.png' 
                             btnText='Overtime' 
                             selected={overtime} 
-                            onClick={() => toggleBtn('overtime')}
+                            href="/home/division-head?page=overtime"
+                            forceReload={true}
                         />
                         <SidebarButton 
                             btnIcon='pass_slip.png' 
                             btnText='Pass Slip' 
                             selected={passSlip} 
-                            onClick={() => toggleBtn('pass_slip')}
+                            href="/home/division-head?page=pass_slip"
+                            forceReload={true}
                         />
                         <SidebarButton 
                             btnIcon='travel_order.png' 
                             btnText='Travel Order' 
                             selected={travelOrder} 
-                            onClick={() => toggleBtn('travel_order')}
+                            href="/home/division-head?page=travel_order"
+                            forceReload={true}
                         />
                     </div>
                     <div className='flex flex-col w-full gap-2'>
@@ -118,13 +104,15 @@ export default function HomePage() {
                             btnIcon='user.svg' 
                             btnText='Profile' 
                             selected={profile} 
-                            onClick={() => toggleBtn('profile')}
+                            href="/home/division-head?page=profile"
+                            forceReload={true}
                         />
                         <SidebarButton 
                             btnIcon='setting.png' 
                             btnText='Settings' 
                             selected={settings} 
-                            onClick={() => toggleBtn('settings')}
+                            href="/home/division-head?page=settings"
+                            forceReload={true}
                         />
                     </div>
                 </div>
@@ -133,12 +121,7 @@ export default function HomePage() {
             {/* Main Content - Old Design */}
             <div className='flex flex-1'>
                 {settings && <SettingContent username={username || "User"} id={id || ""} />}
-                {profile && <ProfileContent 
-                    username={username || "User"} 
-                    profileData={profileData} 
-                    id={id || ""} 
-                    getProfile={fetchProfileData} 
-                />}
+                {profile && <ProfileContent />}
                 {overtime && <OvertimeContent />}
                 {passSlip && <PassSlipContent />}
                 {travelOrder && <TravelOrderContent />}
