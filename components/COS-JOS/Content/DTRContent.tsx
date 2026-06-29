@@ -1,7 +1,7 @@
 // components/COS-JOS/Content/DTRContent.tsx
 import Image from "next/image"
 import ContentHeader from "@/components/ContentHeader"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import axios from "axios"
 import { useSession } from "next-auth/react"
 
@@ -14,14 +14,23 @@ interface DTRRecord {
     timeOutPM: string
     totalHours: string
     status: string
+    leaveStatus?: string
 }
 
 interface LeaveRequest {
     id: string
     startDate: string
     endDate: string
-    type: string // 'Official', 'Personal', 'Emergency'
-    status: string // 'Approved', 'Pending', 'Disapproved'
+    type: string
+    status: string
+}
+
+interface OvertimeRequest {
+    id: string
+    startDate: string
+    endDate: string
+    hours: string
+    status: string
 }
 
 export default function DTRContent({username, userId}: {username: string, userId?: string}) {
@@ -39,7 +48,10 @@ export default function DTRContent({username, userId}: {username: string, userId
     const [message, setMessage] = useState('')
     const [dtrRecords, setDtrRecords] = useState<DTRRecord[]>([])
     const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
+    const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([])
     const [selectedMonth, setSelectedMonth] = useState('')
+    const [editingRecord, setEditingRecord] = useState<string | null>(null)
+    const [editingStatus, setEditingStatus] = useState<string>('')
     const [stats, setStats] = useState({
         tardiness: '0',
         undertime: '0',
@@ -49,6 +61,7 @@ export default function DTRContent({username, userId}: {username: string, userId
         personalCalamity: '0'
     })
     const [hasTodayRecord, setHasTodayRecord] = useState(false)
+    const inputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -70,23 +83,36 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }, [session])
 
-    // ✅ Load both leave requests and DTR records sequentially
+    // Focus input when editing starts
+    useEffect(() => {
+        if (editingRecord && inputRef.current) {
+            inputRef.current.focus()
+            inputRef.current.select()
+        }
+    }, [editingRecord])
+
+    // ✅ Load both leave requests, overtime requests, and DTR records sequentially
     async function loadData(month: string) {
         const approvedLeaves = await fetchLeaveRequests()
-        await fetchDTRRecords(month, approvedLeaves)
+        const approvedOvertimes = await fetchOvertimeRequests()
+        await fetchDTRRecords(month, approvedLeaves, approvedOvertimes)
     }
 
-    // ✅ Session detection - available from 7:00 AM to 6:00 PM
+    // ✅ Session detection - available from 7:15 AM to 6:00 PM
     const getCurrentSession = () => {
         const hour = currentTime.getHours()
-        if (hour >= 7 && hour < 12) return 'morning'
+        const minutes = currentTime.getMinutes()
+        if ((hour === 7 && minutes >= 15) || (hour > 7 && hour < 12)) return 'morning'
         else if (hour >= 12 && hour < 18) return 'afternoon'
         return null
     }
 
     const isTimeAllowed = () => {
         const hour = currentTime.getHours()
-        return hour >= 7 && hour < 18
+        const minutes = currentTime.getMinutes()
+        if ((hour === 7 && minutes >= 15) || (hour > 7 && hour < 18)) return true
+        if (hour === 18 && minutes === 0) return true
+        return false
     }
 
     function calculateTotalHours(timeIn: string, timeOut: string): string {
@@ -163,28 +189,17 @@ export default function DTRContent({username, userId}: {username: string, userId
         return { sickLeave, vacationLeave, personalCalamity }
     }
 
-    // ✅ Fetch ALL approved pass slips (not filtered by month)
+    // ✅ Fetch ALL approved pass slips
     async function fetchLeaveRequests() {
         if (!session?.user?.id) return []
         
         try {
-            console.log('🔍 Fetching pass slips for user:', session.user.id)
             const response = await axios.get(`/api/pass_slip/${session.user.id}`)
             const records = response.data.data || []
-            console.log('📋 All pass slips received:', records.length)
             
-            // Filter only APPROVED pass slips (all months)
             const approvedLeaves = records.filter((record: any) => {
                 return record.status === 'Approved'
             })
-            
-            console.log('✅ Approved pass slips:', approvedLeaves.length)
-            console.log('📝 Approved pass slips details:', approvedLeaves.map((l: any) => ({
-                type: l.type,
-                startDate: l.startDate,
-                endDate: l.endDate,
-                status: l.status
-            })))
             
             setLeaveRequests(approvedLeaves)
             return approvedLeaves
@@ -193,6 +208,29 @@ export default function DTRContent({username, userId}: {username: string, userId
                 console.error('Error fetching pass slips:', error)
             }
             setLeaveRequests([])
+            return []
+        }
+    }
+
+    // ✅ Fetch ALL approved overtime requests
+    async function fetchOvertimeRequests() {
+        if (!session?.user?.id) return []
+        
+        try {
+            const response = await axios.get(`/api/overtime_request/${session.user.id}`)
+            const records = response.data.data || []
+            
+            const approvedOvertimes = records.filter((record: any) => {
+                return record.status === 'Approved'
+            })
+            
+            setOvertimeRequests(approvedOvertimes)
+            return approvedOvertimes
+        } catch (error: any) {
+            if (error.response?.status !== 404) {
+                console.error('Error fetching overtime requests:', error)
+            }
+            setOvertimeRequests([])
             return []
         }
     }
@@ -206,23 +244,17 @@ export default function DTRContent({username, userId}: {username: string, userId
         let vacationLeave = 0
         let personalCalamity = 0
 
-        console.log('📊 Calculating stats from records:', records.length)
-
         records.forEach(record => {
-            // First, check for leave statuses
-            if (record.status === 'Sick Leave') {
+            // Check for leave statuses from the leaveStatus field
+            if (record.leaveStatus === 'Sick Leave') {
                 sickLeave++
-                console.log('💚 Found Sick Leave on:', record.date)
-            } else if (record.status === 'Vacation Leave') {
+            } else if (record.leaveStatus === 'Vacation Leave') {
                 vacationLeave++
-                console.log('💙 Found Vacation Leave on:', record.date)
-            } else if (record.status === 'Personal Calamity') {
+            } else if (record.leaveStatus === 'Personal Calamity') {
                 personalCalamity++
-                console.log('💜 Found Personal Calamity on:', record.date)
             }
             
             // ✅ ALWAYS calculate tardiness, undertime, and overtime regardless of leave status
-            // Calculate total hours
             const totalHours = record.totalHours
             if (totalHours && totalHours !== '-') {
                 const [hours, minutes] = totalHours.split(':').map(Number)
@@ -238,27 +270,34 @@ export default function DTRContent({username, userId}: {username: string, userId
                 }
             }
             
-            // ✅ Auto-calculate tardiness (time-in > 7:00 AM)
-            // 7:00 AM = 420 minutes
+            // ✅ Auto-calculate tardiness (time-in > 7:15 AM)
+            // 7:15 AM = 435 minutes
             if (record.timeInAM) {
                 const [inHours, inMinutes] = record.timeInAM.split(':').map(Number)
                 const timeInMinutes = inHours * 60 + inMinutes
-                if (timeInMinutes > 420) {
+                if (timeInMinutes > 435) {
                     tardiness++
                 }
             }
         })
 
-        console.log('📊 Final stats from DTR:', {
-            tardiness,
-            undertime,
-            overtime,
-            sickLeave,
-            vacationLeave,
-            personalCalamity
-        })
-
         return { tardiness, undertime, overtime, sickLeave, vacationLeave, personalCalamity }
+    }
+
+    // ✅ Count approved overtime requests for the selected month
+    function countOvertimeRequests(overtimes: OvertimeRequest[], month: string) {
+        let count = 0
+        
+        overtimes.forEach(overtime => {
+            const startDate = new Date(overtime.startDate)
+            const monthStr = startDate.toISOString().slice(0, 7)
+            
+            if (monthStr === month) {
+                count++
+            }
+        })
+        
+        return count
     }
 
     // ✅ Check if a date has an approved pass slip and map to DTR status
@@ -266,16 +305,12 @@ export default function DTRContent({username, userId}: {username: string, userId
         const date = new Date(dateStr)
         const dateString = date.toISOString().split('T')[0]
         
-        console.log(`🔎 Checking date: ${dateString} against ${leaves.length} leave requests`)
-        
         for (const leave of leaves) {
             const startDate = new Date(leave.startDate).toISOString().split('T')[0]
             const endDate = new Date(leave.endDate).toISOString().split('T')[0]
             
             if (dateString >= startDate && dateString <= endDate) {
-                // ✅ Map Pass Slip type to DTR status
                 const status = mapPassSlipTypeToStatus(leave.type)
-                console.log(`✅ Match found! Date: ${dateString}, Type: ${leave.type} → Status: ${status}`)
                 if (status) {
                     return status
                 }
@@ -327,12 +362,10 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }
 
-    async function fetchDTRRecords(month: string, leaves: LeaveRequest[] = []) {
+    async function fetchDTRRecords(month: string, leaves: LeaveRequest[] = [], overtimes: OvertimeRequest[] = []) {
         if (!session?.user?.id) return
         
         try {
-            console.log('📅 Fetching DTR records for month:', month)
-            console.log('📋 Passed leaves count:', leaves.length)
             const response = await axios.get(`/api/dtr/${session.user.id}`)
             const records = response.data.data || []
             
@@ -340,10 +373,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                 record.date?.startsWith(month)
             )
             
-            console.log('📋 DTR records found:', filtered.length)
-            
             const formattedRecords: DTRRecord[] = filtered.map((record: any) => {
-                // ✅ Check if this date has an approved pass slip using the passed leaves
                 const leaveStatus = getLeaveStatusForDate(record.date, leaves)
                 
                 const formatted = {
@@ -359,12 +389,8 @@ export default function DTRContent({username, userId}: {username: string, userId
                         record.timeInPM, 
                         record.timeOutPM
                     ),
-                    // ✅ Override status if there's an approved pass slip
-                    status: leaveStatus || record.status || 'Present'
-                }
-                
-                if (leaveStatus) {
-                    console.log(`📌 Record ${record.date}: Status set to "${leaveStatus}" (was "${record.status || 'Present'}")`)
+                    status: record.status || 'Present',
+                    leaveStatus: leaveStatus || undefined
                 }
                 
                 return formatted
@@ -377,17 +403,16 @@ export default function DTRContent({username, userId}: {username: string, userId
             
             // ✅ Count leaves from requests (including those without DTR records)
             const leaveCounts = countLeavesFromRequests(leaves, month)
-            console.log('📊 Leaves from requests:', leaveCounts)
             
             // Count how many leaves were already counted from DTR records
             let dtrSickLeave = 0
             let dtrVacationLeave = 0
             let dtrPersonalCalamity = 0
             
-            formattedRecords.forEach(record => {
-                if (record.status === 'Sick Leave') dtrSickLeave++
-                else if (record.status === 'Vacation Leave') dtrVacationLeave++
-                else if (record.status === 'Personal Calamity') dtrPersonalCalamity++
+            formattedRecords.forEach((record: DTRRecord) => {
+                if (record.leaveStatus === 'Sick Leave') dtrSickLeave++
+                else if (record.leaveStatus === 'Vacation Leave') dtrVacationLeave++
+                else if (record.leaveStatus === 'Personal Calamity') dtrPersonalCalamity++
             })
             
             // Add only the leaves that weren't already counted in DTR
@@ -395,16 +420,18 @@ export default function DTRContent({username, userId}: {username: string, userId
             const additionalVacationLeave = Math.max(0, leaveCounts.vacationLeave - dtrVacationLeave)
             const additionalPersonalCalamity = Math.max(0, leaveCounts.personalCalamity - dtrPersonalCalamity)
             
+            // ✅ Count approved overtime requests for the month and combine with DTR overtime
+            const approvedOvertimeCount = countOvertimeRequests(overtimes, month)
+            
             const finalStats = {
                 tardiness: dtrStats.tardiness.toString(),
                 undertime: dtrStats.undertime.toString(),
-                overtime: dtrStats.overtime.toString(),
+                overtime: (dtrStats.overtime + approvedOvertimeCount).toString(),
                 sickLeave: (dtrStats.sickLeave + additionalSickLeave).toString(),
                 vacationLeave: (dtrStats.vacationLeave + additionalVacationLeave).toString(),
                 personalCalamity: (dtrStats.personalCalamity + additionalPersonalCalamity).toString()
             }
             
-            console.log('📊 Final combined stats:', finalStats)
             setStats(finalStats)
             
         } catch (error: any) {
@@ -412,6 +439,56 @@ export default function DTRContent({username, userId}: {username: string, userId
                 console.error('Error fetching DTR records:', error)
             }
             setDtrRecords([])
+        }
+    }
+
+    // ✅ Handle status update
+    async function handleStatusUpdate(recordId: string, date: string, newStatus: string) {
+        if (!session?.user?.id) return
+        
+        try {
+            const response = await axios.put(`/api/dtr/update-status/${session.user.id}`, {
+                date: date,
+                status: newStatus
+            })
+            
+            if (response.status === 200) {
+                setMessage('Status updated successfully')
+                await loadData(selectedMonth)
+                setEditingRecord(null)
+                setEditingStatus('')
+            }
+        } catch (error: any) {
+            console.error('Error updating status:', error)
+            setMessage('❌ Error updating status')
+        }
+    }
+
+    // ✅ Handle double click to edit
+    function handleDoubleClick(date: string, currentStatus: string) {
+        setEditingRecord(date)
+        setEditingStatus(currentStatus)
+    }
+
+    // ✅ Handle Enter key to save
+    function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>, recordId: string, date: string) {
+        if (e.key === 'Enter') {
+            e.preventDefault()
+            if (editingStatus.trim() !== '') {
+                handleStatusUpdate(recordId, date, editingStatus)
+            }
+        } else if (e.key === 'Escape') {
+            setEditingRecord(null)
+            setEditingStatus('')
+        }
+    }
+
+    // ✅ Handle blur to cancel edit
+    function handleBlur() {
+        // Only cancel if we're not in the middle of a save
+        if (editingRecord) {
+            setEditingRecord(null)
+            setEditingStatus('')
         }
     }
 
@@ -460,13 +537,13 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
 
         if (!isTimeAllowed()) {
-            setMessage('Time-in is only available from 7:00 AM to 6:00 PM')
+            setMessage('Time-in is only available from 7:15 AM to 6:00 PM')
             return
         }
 
         const sessionType = getCurrentSession()
         if (!sessionType) {
-            setMessage('Time-in is only available from 7:00 AM to 6:00 PM')
+            setMessage('Time-in is only available from 7:15 AM to 6:00 PM')
             return
         }
 
@@ -533,13 +610,13 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
 
         if (!isTimeAllowed()) {
-            setMessage('Time-out is only available from 7:00 AM to 6:00 PM')
+            setMessage('Time-out is only available from 7:15 AM to 6:00 PM')
             return
         }
 
         const sessionType = getCurrentSession()
         if (!sessionType) {
-            setMessage('Time-out is only available from 7:00 AM to 6:00 PM')
+            setMessage('Time-out is only available from 7:15 AM to 6:00 PM')
             return
         }
 
@@ -663,7 +740,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                     </div>
 
                     {!timeAllowed && (
-                        <p className='text-xs text-red-500 mt-1'>Time-in/out available from 7:00 AM to 6:00 PM</p>
+                        <p className='text-xs text-red-500 mt-1'>Time-in/out available from 7:15 AM to 6:00 PM</p>
                     )}
 
                     {message && (
@@ -795,7 +872,38 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             {dayData.totalHours}
                                         </td>
                                         <td>
-                                            {dayData.isFuture ? '-' : (dayData.isWeekend ? 'Weekend' : (dayData.status || 'Absent'))}
+                                            {dayData.isFuture ? '-' : (
+                                                dayData.isWeekend ? 'Weekend' : (
+                                                    editingRecord === dayData.date ? (
+                                                        <input
+                                                            ref={inputRef}
+                                                            type="text"
+                                                            value={editingStatus}
+                                                            onChange={(e) => setEditingStatus(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (dayData.record) {
+                                                                    handleKeyDown(e, dayData.record.id, dayData.date)
+                                                                }
+                                                            }}
+                                                            onBlur={handleBlur}
+                                                            className="border border-blue-500 rounded px-1 py-0.5 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                            placeholder="Enter status..."
+                                                        />
+                                                    ) : (
+                                                        <span 
+                                                            onDoubleClick={() => {
+                                                                if (!dayData.isFuture && dayData.record) {
+                                                                    handleDoubleClick(dayData.date, dayData.status)
+                                                                }
+                                                            }}
+                                                            className={`${!dayData.isFuture && dayData.record ? 'cursor-pointer hover:text-blue-600 hover:underline' : 'cursor-default'}`}
+                                                            title={!dayData.isFuture && dayData.record ? 'Double-click to edit' : ''}
+                                                        >
+                                                            {dayData.status}
+                                                        </span>
+                                                    )
+                                                )
+                                            )}
                                         </td>
                                     </tr>
                                 ))
