@@ -19,6 +19,7 @@ export default function Home() {
     const [rq2, setRq2] = useState(false)
     const [rq3, setRq3] = useState(false)
     const [loading, setLoading] = useState(false)
+    const [showPassword, setShowPassword] = useState(false)
 
     const { data: session, status } = useSession()
     const router = useRouter()
@@ -84,7 +85,6 @@ export default function Home() {
             console.log('Email:', session.user.email)
             console.log('Role:', session.user.role)
             
-            // ✅ Check if user exists in database first
             const response = await axios.get(`/api/profile/${userId}`)
             console.log('Profile check response:', response.data)
             
@@ -100,7 +100,6 @@ export default function Home() {
             }
         } catch (error: any) {
             console.log('📝 Error fetching profile - redirecting to create profile')
-            // If error (404, 403, etc.), redirect to create profile
             router.push('/home')
         }
     }
@@ -162,15 +161,25 @@ export default function Home() {
                             ${isPassFocused || password ? 'text-blue-500 -translate-y-6 text-sm' : 'text-gray-400'}`}>
                             Password
                         </label>
-                        <input
-                            required
-                            onFocus={() => setIsPassFocused(true)}
-                            onBlur={() => setIsPassFocused(false)}
-                            onChange={(e) => checkPassword(e.target.value)}
-                            type="password" 
-                            className={`border-b-[1px] outline-0 w-full pb-1 text-sm
-                                ${isPassFocused || password ? 'border-blue-500' : 'border-gray-400'}`}
-                        />
+                        <div className='flex items-center w-full border-b-[1px] pb-1'>
+                            <input
+                                required
+                                onFocus={() => setIsPassFocused(true)}
+                                onBlur={() => setIsPassFocused(false)}
+                                onChange={(e) => checkPassword(e.target.value)}
+                                type={showPassword ? "text" : "password"} 
+                                className={`outline-0 w-full text-sm
+                                    ${isPassFocused || password ? 'border-blue-500' : 'border-gray-400'}`}
+                            />
+                            <Image
+                                onClick={() => setShowPassword(!showPassword)}
+                                className='cursor-pointer ml-2'
+                                src={showPassword ? '/eye.svg' : '/eye_close.svg'} 
+                                width={18} 
+                                height={18} 
+                                alt={showPassword ? 'Hide password' : 'Show password'}
+                            />
+                        </div>
                     </div>
                     
                     <div className='flex flex-col gap-2 w-full'>

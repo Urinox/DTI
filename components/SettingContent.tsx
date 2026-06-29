@@ -1,12 +1,13 @@
-// components/SettingContent.tsx
+// components/SettingContent.tsx - Modified version
 import ContentHeader from "@/components/ContentHeader"
 import Image from "next/image"
-import { useState } from "react"
-import axios from "axios"
-import { getAuth, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
+import { useState, useEffect } from "react"
+import { getAuth, EmailAuthProvider, reauthenticateWithCredential, updatePassword, onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
+import { useSession } from "next-auth/react"
 
 export default function SettingContent({username, id} : {username: string, id: string}) {
+    const { data: session } = useSession()
     const [isCurrentFocused, setIsCurrentFocused] = useState(false)
     const [isNewFocused, setIsNewFocused] = useState(false)
     const [isConfirmFocused, setIsConfirmFocused] = useState(false)
@@ -21,6 +22,43 @@ export default function SettingContent({username, id} : {username: string, id: s
     const [rq3, setRq3] = useState(false)
     const [message, setMessage] = useState('')
     const [isLoading, setIsLoading] = useState(false)
+    const [firebaseUser, setFirebaseUser] = useState<any>(null)
+    const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+
+    // ✅ Check Firebase auth state
+    useEffect(() => {
+        console.log('SettingContent mounted, checking Firebase auth...')
+        
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            console.log('Firebase auth state changed:', user?.email || 'No user')
+            setFirebaseUser(user)
+            setIsCheckingAuth(false)
+        })
+
+        // Also check if there's a current user immediately
+        const currentUser = auth.currentUser
+        if (currentUser) {
+            console.log('Current Firebase user found:', currentUser.email)
+            setFirebaseUser(currentUser)
+            setIsCheckingAuth(false)
+        }
+
+        return () => unsubscribe()
+    }, [])
+
+    // ✅ Function to sign in to Firebase
+    async function signInToFirebase(email: string, password: string) {
+        try {
+            console.log('Attempting to sign in to Firebase with email:', email)
+            const userCredential = await signInWithEmailAndPassword(auth, email, password)
+            console.log('✅ Firebase sign-in successful:', userCredential.user.email)
+            setFirebaseUser(userCredential.user)
+            return userCredential.user
+        } catch (error: any) {
+            console.error('❌ Firebase sign-in failed:', error.message)
+            throw error
+        }
+    }
 
     function validateNewPassword(password: string) {
         setNewPassword(password)
@@ -39,8 +77,6 @@ export default function SettingContent({username, id} : {username: string, id: s
         }else{
             setRq3(false)
         }
-        if (rq1 && rq2 && rq3) return true
-        return false
     }
 
     function checkPasswordMatch() {
@@ -68,16 +104,45 @@ export default function SettingContent({username, id} : {username: string, id: s
         }
 
         try {
-            // Get the current user from Firebase Auth
-            const user = auth.currentUser
+            let user = firebaseUser || auth.currentUser
+            
+            // ✅ If user is not authenticated in Firebase, try to sign in
+            if (!user || !user.email) {
+                console.log('No Firebase user found. Attempting to sign in...')
+                
+                // Check if we have session info
+                if (!session?.user?.email) {
+                    setMessage('❌ Please sign out and sign in again.')
+                    setIsLoading(false)
+                    return
+                }
+                
+                // Try to sign in to Firebase using the session email and current password
+                try {
+                    user = await signInToFirebase(session.user.email, currentPassword)
+                } catch (signInError: any) {
+                    if (signInError.code === 'auth/wrong-password') {
+                        setMessage('❌ Incorrect password. Please try again.')
+                    } else if (signInError.code === 'auth/user-not-found') {
+                        setMessage('❌ User not found in Firebase Authentication. Please contact support.')
+                    } else {
+                        setMessage('❌ Unable to authenticate. Please sign out and sign in again.')
+                    }
+                    setIsLoading(false)
+                    return
+                }
+            }
+            
+            console.log('Firebase user for password change:', user?.email)
             
             if (!user || !user.email) {
-                setMessage('User not authenticated. Please login again.')
+                setMessage('❌ Unable to authenticate. Please sign out and sign in again.')
                 setIsLoading(false)
                 return
             }
 
-            // Re-authenticate user with current password
+            // ✅ Try to re-authenticate the user
+            console.log('Attempting to re-authenticate user:', user.email)
             const credential = EmailAuthProvider.credential(
                 user.email,
                 currentPassword
@@ -85,9 +150,11 @@ export default function SettingContent({username, id} : {username: string, id: s
 
             try {
                 await reauthenticateWithCredential(user, credential)
+                console.log('✅ Re-authentication successful')
                 
-                // Update password in Firebase Auth
+                // ✅ Update password
                 await updatePassword(user, newPassword)
+                console.log('✅ Password updated successfully')
                 
                 setMessage('✅ Password changed successfully!')
                 
@@ -100,12 +167,19 @@ export default function SettingContent({username, id} : {username: string, id: s
                 setRq3(false)
                 
             } catch (authError: any) {
+                console.error('Auth error:', authError.code, authError.message)
+                
+                // Handle specific Firebase auth errors
                 if (authError.code === 'auth/wrong-password') {
                     setMessage('❌ Current password is incorrect')
                 } else if (authError.code === 'auth/too-many-requests') {
                     setMessage('❌ Too many attempts. Please try again later.')
+                } else if (authError.code === 'auth/user-not-found') {
+                    setMessage('❌ User not found. Please sign out and sign in again.')
+                } else if (authError.code === 'auth/requires-recent-login') {
+                    setMessage('❌ This operation requires recent login. Please sign out and sign in again.')
                 } else {
-                    setMessage(`❌ Error: ${authError.message}`)
+                    setMessage(`❌ ${authError.message}`)
                 }
             }
 
@@ -117,9 +191,25 @@ export default function SettingContent({username, id} : {username: string, id: s
         }
     }
 
+    if (isCheckingAuth) {
+        return (
+            <div className='flex flex-col w-full'>
+                <ContentHeader />
+                <div className='flex flex-col bg-white border-[1] my-5 rounded-xl py-5 mx-70 gap-5 shadow-lg'>
+                    <div className='w-full border-b-[1] border-gray-600 pl-5 pb-5'>
+                        <p className='text-xl font-bold'>Change Password</p>
+                    </div>
+                    <div className='flex justify-center items-center py-10'>
+                        <p className='text-gray-500'>Loading...</p>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     return(
         <div className='flex flex-col w-full'>
-            <ContentHeader username={username}/>
+            <ContentHeader />
             <div className='flex flex-col bg-white border-[1] my-5 rounded-xl py-5 mx-70 gap-5 shadow-lg'>
                 <div className='w-full border-b-[1] border-gray-600 pl-5 pb-5'>
                     <p className='text-xl font-bold'>Change Password</p>
@@ -216,7 +306,7 @@ export default function SettingContent({username, id} : {username: string, id: s
                     
                     <div className='flex justify-end my-2'>
                         <input 
-                            className='font-bold rounded-lg bg-red-800 cursor-pointer text-white px-6 py-2 hover:bg-red-700 transition-colors' 
+                            className='font-bold rounded-lg bg-red-800 cursor-pointer text-white px-6 py-2 hover:bg-red-700 transition-colors disabled:opacity-50' 
                             type='submit' 
                             value={isLoading ? 'Saving...' : 'Save Changes'}
                             disabled={isLoading}

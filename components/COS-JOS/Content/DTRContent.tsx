@@ -98,20 +98,23 @@ export default function DTRContent({username, userId}: {username: string, userId
         await fetchDTRRecords(month, approvedLeaves, approvedOvertimes)
     }
 
-    // ✅ Session detection - available from 7:15 AM to 6:00 PM
+    // ✅ Session detection
     const getCurrentSession = () => {
         const hour = currentTime.getHours()
         const minutes = currentTime.getMinutes()
-        if ((hour === 7 && minutes >= 15) || (hour > 7 && hour < 12)) return 'morning'
-        else if (hour >= 12 && hour < 18) return 'afternoon'
+        
+        // Morning session: 6:00 AM to 1:00 PM
+        if ((hour >= 6 && hour < 13) || (hour === 13 && minutes === 0)) return 'morning'
+        // Afternoon session: 1:00 PM to 7:00 PM
+        else if ((hour >= 13 && hour < 19) || (hour === 19 && minutes === 0)) return 'afternoon'
         return null
     }
 
     const isTimeAllowed = () => {
         const hour = currentTime.getHours()
         const minutes = currentTime.getMinutes()
-        if ((hour === 7 && minutes >= 15) || (hour > 7 && hour < 18)) return true
-        if (hour === 18 && minutes === 0) return true
+        // 6:00 AM to 7:00 PM
+        if ((hour >= 6 && hour < 19) || (hour === 19 && minutes === 0)) return true
         return false
     }
 
@@ -270,7 +273,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                 }
             }
             
-            // ✅ Auto-calculate tardiness (time-in > 7:15 AM)
+            // ✅ Auto-calculate tardiness (time-in > 7:15 AM for morning)
             // 7:15 AM = 435 minutes
             if (record.timeInAM) {
                 const [inHours, inMinutes] = record.timeInAM.split(':').map(Number)
@@ -537,13 +540,13 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
 
         if (!isTimeAllowed()) {
-            setMessage('Time-in is only available from 7:15 AM to 6:00 PM')
+            setMessage('Time-in is only available from 6:00 AM to 7:00 PM')
             return
         }
 
         const sessionType = getCurrentSession()
         if (!sessionType) {
-            setMessage('Time-in is only available from 7:15 AM to 6:00 PM')
+            setMessage('Time-in is only available from 6:00 AM to 7:00 PM')
             return
         }
 
@@ -610,13 +613,13 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
 
         if (!isTimeAllowed()) {
-            setMessage('Time-out is only available from 7:15 AM to 6:00 PM')
+            setMessage('Time-out is only available from 6:00 AM to 7:00 PM')
             return
         }
 
         const sessionType = getCurrentSession()
         if (!sessionType) {
-            setMessage('Time-out is only available from 7:15 AM to 6:00 PM')
+            setMessage('Time-out is only available from 6:00 AM to 7:00 PM')
             return
         }
 
@@ -731,17 +734,17 @@ export default function DTRContent({username, userId}: {username: string, userId
                     <div className='flex gap-4 mt-1'>
                         <span className={`text-sm font-semibold ${isMorningSession ? 'text-green-600' : 'text-gray-400'}`}>
                             Morning
-                            {isTimeInAM && !isTimeOutAM ? '' : isTimeOutAM ? '' : ''}
+                            {isTimeInAM && !isTimeOutAM ? ' (In)' : isTimeOutAM ? ' (Out)' : ''}
                         </span>
                         <span className={`text-sm font-semibold ${isAfternoonSession ? 'text-orange-600' : 'text-gray-400'}`}>
                             Afternoon
-                            {isTimeInPM && !isTimeOutPM ? '' : isTimeOutPM ? '' : ''}
+                            {isTimeInPM && !isTimeOutPM ? ' (In)' : isTimeOutPM ? ' (Out)' : ''}
                         </span>
                     </div>
 
-                    {!timeAllowed && (
-                        <p className='text-xs text-red-500 mt-1'>Time-in/out available from 7:15 AM to 6:00 PM</p>
-                    )}
+                   {/*} {!timeAllowed && (
+                        <p className='text-xs text-red-500 mt-1'>Time-in/out available from 6:00 AM to 7:00 PM</p>
+                    )}*/}
 
                     {message && (
                         <p className={`text-sm font-semibold ${message.includes('✅') ? 'text-green-600' : message.includes('❌') ? 'text-red-600' : 'text-blue-600'}`}>
