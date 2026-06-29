@@ -28,11 +28,8 @@ export default function SidebarButton({
 
         // If href is provided, navigate and reload
         if (href) {
-            router.push(href);
-            // Reload after navigation to refresh data
-            setTimeout(() => {
-                window.location.reload();
-            }, 100);
+            // Use window.location for a full page reload instead of router.push
+            window.location.href = href;
         }
     };
 
