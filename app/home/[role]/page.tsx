@@ -10,9 +10,9 @@ import axios from "axios"
 
 // Import dashboards - go up one level to access the role folders
 import AdminDashboard from "../admin/page"
-import ProvincialDirectorDashboard from "../provincial-director/page"
-import CosJoDashboard from "../cos-jo/page"
-import DivisionHeadDashboard from "../division-head/page"
+import ProvincialDirectorDashboard from "../provincial-director/ProvincialDirectorContent"
+import CosJoDashboard from "../cos-jo/CosJoContent"
+import DivisionHeadDashboard from "../division-head/DivisionHeadContent"
 
 export default function RoleDashboard() {
     const params = useParams()
