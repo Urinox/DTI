@@ -77,6 +77,7 @@ export default function DTRManagerContent() {
     const [editingStatus, setEditingStatus] = useState<string>('')
     const [searchTerm, setSearchTerm] = useState('')
     const [message, setMessage] = useState('')
+    const [selectedDetail, setSelectedDetail] = useState<any>(null)
     const inputRef = useRef<HTMLInputElement>(null)
     const itemsPerPage = 10
     const [passSlipsCache, setPassSlipsCache] = useState<Record<string, PassSlip[]>>({})
@@ -313,6 +314,17 @@ export default function DTRManagerContent() {
         return details
     }
 
+    function isSpecialStatus(status: string): boolean {
+        const specialStatuses = [
+            'Vacation Leave', 
+            'Sick Leave', 
+            'Personal Calamity', 
+            'Overtime', 
+            'Travel Order'
+        ]
+        return specialStatuses.includes(status)
+    }
+
     async function fetchAllDTRRecords(month: string) {
         setLoading(true)
         const allRecords: DTRRecord[] = []
@@ -336,7 +348,6 @@ export default function DTRManagerContent() {
                         let displayStatus = record.status || 'Present'
                         
                         if (leaveDetails.length > 0) {
-                            // Check for specific types in order of priority
                             let foundStatus = false
                             
                             for (const detail of leaveDetails) {
@@ -358,7 +369,6 @@ export default function DTRManagerContent() {
                                 }
                             }
                             
-                            // If no specific type found but there are details, use the first one
                             if (!foundStatus && leaveDetails.length > 0) {
                                 const firstType = leaveDetails[0]?.type
                                 const mappedStatus = mapPassSlipTypeToStatus(firstType)
@@ -453,6 +463,10 @@ export default function DTRManagerContent() {
     }
 
     function handleDoubleClick(record: DTRRecord) {
+        // Only allow editing for non-special statuses
+        if (isSpecialStatus(record.status)) {
+            return
+        }
         setEditingRecord(record.id)
         setEditingStatus(record.status || '')
     }
@@ -536,6 +550,61 @@ export default function DTRManagerContent() {
             default:
                 return 'text-gray-600'
         }
+    }
+
+    function handleStatusClick(record: DTRRecord) {
+        if (isSpecialStatus(record.status) && record.leaveDetails && record.leaveDetails.length > 0) {
+            setSelectedDetail({
+                record: record,
+                details: record.leaveDetails
+            })
+        }
+    }
+
+    function closeDetailModal() {
+        setSelectedDetail(null)
+    }
+
+    // Render status cell
+    function renderStatusCell(record: DTRRecord) {
+        if (editingRecord === record.id) {
+            return (
+                <input
+                    ref={inputRef}
+                    type="text"
+                    value={editingStatus}
+                    onChange={(e) => setEditingStatus(e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, record)}
+                    onBlur={() => handleBlur(record)}
+                    className="border border-blue-500 rounded px-1 py-0.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="Enter status..."
+                />
+            )
+        }
+
+        if (isSpecialStatus(record.status) && record.leaveDetails && record.leaveDetails.length > 0) {
+            return (
+                <span 
+                    onClick={() => handleStatusClick(record)}
+                    className={`cursor-pointer hover:underline font-medium ${getStatusColor(record.status)}`}
+                    title="Click to view details"
+                >
+                    {record.status}
+                    <span className="ml-1 text-xs text-gray-400"></span>
+                </span>
+            )
+        }
+
+        // Non-special statuses (Present, Absent, Weekend) - editable on double-click
+        return (
+            <span 
+                onDoubleClick={() => handleDoubleClick(record)}
+                className={`cursor-pointer hover:underline font-medium ${getStatusColor(record.status)}`}
+                title="Double-click to edit status"
+            >
+                {record.status || 'Click to add status'}
+            </span>
+        )
     }
 
     if (loading) {
@@ -661,26 +730,7 @@ export default function DTRManagerContent() {
                                             </td>
                                             <td className='pl-5 py-2 font-medium'>{record.totalHours || '-'}</td>
                                             <td className='pl-5 py-2'>
-                                                {editingRecord === record.id ? (
-                                                    <input
-                                                        ref={inputRef}
-                                                        type="text"
-                                                        value={editingStatus}
-                                                        onChange={(e) => setEditingStatus(e.target.value)}
-                                                        onKeyDown={(e) => handleKeyDown(e, record)}
-                                                        onBlur={() => handleBlur(record)}
-                                                        className="border border-blue-500 rounded px-1 py-0.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                                        placeholder="Enter status..."
-                                                    />
-                                                ) : (
-                                                    <span 
-                                                        onDoubleClick={() => handleDoubleClick(record)}
-                                                        className={`cursor-pointer hover:underline font-medium ${getStatusColor(record.status)}`}
-                                                        title="Double-click to edit status"
-                                                    >
-                                                        {record.status || 'Click to add status'}
-                                                    </span>
-                                                )}
+                                                {renderStatusCell(record)}
                                             </td>
                                         </tr>
                                     ))
@@ -713,6 +763,71 @@ export default function DTRManagerContent() {
                     </div>
                 )}
             </div>
+
+            {/* Detail Modal */}
+            {selectedDetail && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={closeDetailModal}>
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-800">
+                                {selectedDetail.record.status} Details
+                            </h3>
+                            <button 
+                                onClick={closeDetailModal}
+                                className="text-gray-500 hover:text-gray-700 text-xl"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <div className="border-t border-gray-200 pt-4">
+                            <p className="text-sm text-gray-600 mb-2">
+                                <span className="font-semibold">Employee:</span> {selectedDetail.record.employeeName}
+                            </p>
+                            <p className="text-sm text-gray-600 mb-2">
+                                <span className="font-semibold">Date:</span> {selectedDetail.record.date}
+                            </p>
+                            {selectedDetail.details.map((detail: any, index: number) => {
+                                let displayType = ''
+                                if (detail.type === 'Personal') displayType = 'Personal Calamity'
+                                else if (detail.type === 'Emergency') displayType = 'Sick Leave'
+                                else if (detail.type === 'Official') displayType = 'Vacation Leave'
+                                else if (detail.type === 'Overtime') displayType = 'Overtime'
+                                else if (detail.type === 'Travel Order') displayType = 'Travel Order'
+                                else displayType = detail.type
+                                
+                                return (
+                                    <div key={index} className="bg-gray-50 rounded p-3 mb-3">
+                                        <p className="text-sm font-semibold text-gray-800">{displayType}</p>
+                                        {detail.purpose && (
+                                            <p className="text-sm text-gray-600 mt-1">
+                                                <span className="font-medium">Purpose:</span> {detail.purpose}
+                                            </p>
+                                        )}
+                                        {detail.destination && (
+                                            <p className="text-sm text-gray-600">
+                                                <span className="font-medium">Destination:</span> {detail.destination}
+                                            </p>
+                                        )}
+                                        {(detail.startTime && detail.endTime) && (
+                                            <p className="text-sm text-gray-600">
+                                                <span className="font-medium">Time:</span> {detail.startTime} - {detail.endTime}
+                                            </p>
+                                        )}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                        <div className="mt-4 flex justify-end">
+                            <button
+                                onClick={closeDetailModal}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
