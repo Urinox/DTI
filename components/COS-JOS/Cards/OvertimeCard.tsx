@@ -7,7 +7,6 @@ interface OvertimeInfo {
     startDate: string,
     endDate: string,
     purpose: string,
-    destination: string,
     status: string,
     hours?: string
 }
@@ -92,10 +91,6 @@ export default function OvertimeCard({info} : {info: OvertimeInfo}) {
             <div className='flex flex-col w-full px-5'>
                 <p className='font-bold text-sm'>Purpose</p>
                 <p className='text-gray-600 text-sm'>{info.purpose}</p>
-            </div>
-            <div className='flex flex-col w-full px-5'>
-                <p className='font-bold text-sm'>Destination</p>
-                <p className='text-gray-600 text-sm'>{info.destination}</p>
             </div>
         </div>
     )

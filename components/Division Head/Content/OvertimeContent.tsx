@@ -5,11 +5,7 @@ import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 import axios from "axios"
 
-interface OvertimeContentProps {
-    username?: string
-}
-
-export default function OvertimeContent({ username = 'User' }: OvertimeContentProps) {
+export default function OvertimeContent() {
     const { data: session } = useSession()
     const [overtimeData, setOvertimeData] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
@@ -40,8 +36,8 @@ export default function OvertimeContent({ username = 'User' }: OvertimeContentPr
         try {
             if (!session?.user?.id) return
             
-            // ✅ Use overtime_request path
-            const response = await axios.get(`/api/overtime_request/${session.user.id}`)
+            // ✅ Fetch all overtime requests
+            const response = await axios.get(`/api/overtime_request`)
             const data = response.data.data || []
             
             console.log('📋 Overtime data:', data)
@@ -53,26 +49,25 @@ export default function OvertimeContent({ username = 'User' }: OvertimeContentPr
         }
     }
 
-async function handleApprove(requestId: string) {
-    try {
-        const response = await axios.put('/api/overtime_request/update', {
-            requestId,
-            status: 'Pending Provincial'  // ✅ Pass to Provincial Director
-        })
-        
-        if (response.status === 200) {
-            alert('✅ Overtime approved and sent to Provincial Director!')
-            fetchOvertimeData()
+    async function handleApprove(requestId: string) {
+        try {
+            const response = await axios.put('/api/overtime_request/update', {
+                requestId,
+                status: 'Pending Provincial'  // ✅ Pass to Provincial Director
+            })
+            
+            if (response.status === 200) {
+                alert('✅ Overtime approved and sent to Provincial Director!')
+                fetchOvertimeData()
+            }
+        } catch (error: any) {
+            console.error('Error approving overtime:', error)
+            alert(error.response?.data?.message || '❌ Error approving overtime')
         }
-    } catch (error: any) {
-        console.error('Error approving overtime:', error)
-        alert(error.response?.data?.message || '❌ Error approving overtime')
     }
-}
 
     async function handleDisapprove(requestId: string) {
         try {
-            // ✅ Use overtime_request update path
             const response = await axios.put('/api/overtime_request/update', {
                 requestId,
                 status: 'Disapproved'
@@ -102,7 +97,7 @@ async function handleApprove(requestId: string) {
 
     // ✅ Filter by user's office (only show requests from their municipality)
     const filteredData = statusFilteredData.filter(item => {
-        const itemOffice = item.office || ''
+        const itemOffice = item.office || item.user?.profile?.office || ''
         if (!userOffice) return true
         return itemOffice.toLowerCase() === userOffice.toLowerCase()
     })
@@ -110,7 +105,7 @@ async function handleApprove(requestId: string) {
     if (loading) {
         return (
             <div className={`flex flex-col w-full bg-gray-200 ${show ? 'overflow-hidden h-screen' : ''}`}>
-                <ContentHeader username={username} userId={session?.user?.id} />
+                <ContentHeader />
                 <div className='flex flex-col my-5 mx-40 bg-white flex-1 rounded-xl border-[1] border-black shadow-xl shadow-gray-500/30'>
                     <div className='flex justify-center items-center p-10'>
                         <p className='text-gray-500'>Loading...</p>
@@ -122,7 +117,7 @@ async function handleApprove(requestId: string) {
 
     return(
         <div className={`flex flex-col w-full ${show ? 'overflow-hidden h-screen' : ''}`}>
-            <ContentHeader username={username} userId={session?.user?.id} />
+            <ContentHeader />
             <div className='flex flex-col my-5 mx-40 bg-white flex-1 rounded-xl border-[1] border-black shadow-xl shadow-gray-500/30'>
                 <div className='flex justify-between items-center p-5 border-b-[1] border-gray-300'>
                     <div className='flex items-center gap-4'>
@@ -133,6 +128,7 @@ async function handleApprove(requestId: string) {
                         >
                             <option>All</option>
                             <option>Pending</option>
+                            <option>Pending Provincial</option>
                             <option>Approved</option>
                             <option>Disapproved</option>
                         </select>

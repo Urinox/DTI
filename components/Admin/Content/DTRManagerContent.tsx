@@ -51,7 +51,6 @@ interface OvertimeRequest {
     hours: string
     status: string
     purpose: string
-    destination: string
 }
 
 interface TravelOrderRequest {
@@ -272,14 +271,13 @@ export default function DTRManagerContent() {
     }
 
     // ✅ Optimized: Pre-calculate date ranges once
-    function getLeaveDetailsForDateOptimized(
-        dateStr: string, 
-        passSlips: PassSlip[], 
-        overtimes: OvertimeRequest[], 
-        travelOrders: TravelOrderRequest[]
-    ): any[] {
-        const details: any[] = []
-        
+function getLeaveDetailsForDateOptimized(
+    dateStr: string, 
+    passSlips: PassSlip[], 
+    overtimes: OvertimeRequest[], 
+    travelOrders: TravelOrderRequest[]
+): any[] {
+    const details: any[] = []
         // Pre-calculate date ranges
         const passSlipRanges = passSlips.map(slip => ({
             ...slip,
@@ -319,7 +317,6 @@ export default function DTRManagerContent() {
                     purpose: overtime.purpose || '',
                     startTime: new Date(overtime.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
                     endTime: new Date(overtime.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                    destination: overtime.destination || ''
                 })
             }
         }

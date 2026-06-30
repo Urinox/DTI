@@ -9,7 +9,6 @@ interface OvertimeCardProps {
         startDate?: string
         endDate?: string
         purpose: string
-        destination: string
         status: string
         userId?: string
         username?: string
@@ -149,10 +148,6 @@ export default function OvertimeCard({ info, onApprove, onDisapprove }: Overtime
             <div className='flex flex-col w-full px-5'>
                 <p className='font-bold text-sm'>Purpose</p>
                 <p className='text-gray-600 text-sm'>{info.purpose}</p>
-            </div>
-            <div className='flex flex-col w-full px-5'>
-                <p className='font-bold text-sm'>Destination</p>
-                <p className='text-gray-600 text-sm'>{info.destination}</p>
             </div>
         </div>
     )

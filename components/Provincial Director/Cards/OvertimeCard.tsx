@@ -9,7 +9,6 @@ interface OvertimeCardProps {
         startDate?: string
         endDate?: string
         purpose: string
-        destination: string
         status: string
         userId?: string
         username?: string
@@ -27,21 +26,25 @@ export default function OvertimeCard({ info, onApprove, onDisapprove }: Overtime
     const [endTime, setEndTime] = useState('')
 
     function formatStartDate() {
-        const date = new Date(info.startDate || info.date)
+        // ✅ Fixed: Provide fallback date if startDate or date is undefined
+        const dateString = info.startDate || info.date || new Date().toISOString()
+        const date = new Date(dateString)
         setStartDate(date.toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric'}))
         setStartDay(date.toLocaleDateString('en-US', {weekday: 'long'}))
         setStartTime(date.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}))
     }
 
     function formatEndDate() {
-        const date = new Date(info.endDate || info.startDate || info.date)
+        // ✅ Fixed: Provide fallback date if endDate, startDate, or date is undefined
+        const dateString = info.endDate || info.startDate || info.date || new Date().toISOString()
+        const date = new Date(dateString)
         setEndTime(date.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}))
     }
 
     useEffect(() => {
         formatStartDate()
         formatEndDate()
-    }, []);
+    }, [info.startDate, info.endDate, info.date]);
 
     // ✅ Provincial Director sees Pending Provincial (approved by Division Head)
     const isPendingProvincial = info.status === 'Pending Provincial'
@@ -132,10 +135,6 @@ export default function OvertimeCard({ info, onApprove, onDisapprove }: Overtime
             <div className='flex flex-col w-full px-5'>
                 <p className='font-bold text-sm'>Purpose</p>
                 <p className='text-gray-600 text-sm'>{info.purpose}</p>
-            </div>
-            <div className='flex flex-col w-full px-5'>
-                <p className='font-bold text-sm'>Destination</p>
-                <p className='text-gray-600 text-sm'>{info.destination}</p>
             </div>
         </div>
     )

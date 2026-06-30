@@ -13,7 +13,6 @@ export default function OvertimePopup({ showPopup, id, getOvertimeRequest }: Ove
     const [startTime, setStartTime] = useState('')
     const [endTime, setEndTime] = useState('')
     const [purpose, setPurpose] = useState('')
-    const [destination, setDestination] = useState('')
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState('')
 
@@ -22,7 +21,7 @@ export default function OvertimePopup({ showPopup, id, getOvertimeRequest }: Ove
         setIsLoading(true)
         setError('')
 
-        if (!date || !startTime || !endTime || !purpose || !destination) {
+        if (!date || !startTime || !endTime || !purpose) {
             setError('Please fill in all required fields')
             setIsLoading(false)
             return
@@ -33,13 +32,12 @@ export default function OvertimePopup({ showPopup, id, getOvertimeRequest }: Ove
             const endDate = new Date(`${date}T${endTime}:00`)
 
             console.log('Submitting overtime request for user:', id)
-            console.log('📋 Data:', { startDate, endDate, purpose, destination })
+            console.log('📋 Data:', { startDate, endDate, purpose })
 
             const response = await axios.post(`/api/overtime_request/${id}`, {
                 startDate: startDate.toISOString(),
                 endDate: endDate.toISOString(),
                 purpose,
-                destination,
                 hours: '0'
             })
 
@@ -111,17 +109,6 @@ export default function OvertimePopup({ showPopup, id, getOvertimeRequest }: Ove
                             rows={2}
                             className='outline-0 border border-gray-300 text-gray-700 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 text-sm resize-none'
                             placeholder='Enter purpose'
-                        />
-                    </div>
-
-                    <div className='flex flex-col gap-1.5'>
-                        <label className='font-bold text-gray-700 text-sm'>Destination *</label>
-                        <input
-                            required
-                            onChange={(e) => setDestination(e.target.value)}
-                            type='text'
-                            placeholder='Enter destination'
-                            className='border border-gray-300 text-gray-700 rounded-lg px-3 py-1.5 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
                         />
                     </div>
                 </form>
