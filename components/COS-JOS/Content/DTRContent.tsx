@@ -882,15 +882,15 @@ export default function DTRContent({username, userId}: {username: string, userId
                     <div className='flex gap-4 mt-1'>
                         <span className={`text-sm font-semibold ${isMorningSession ? 'text-green-600' : 'text-gray-400'}`}>
                             Morning
-                            {isTimeInAM && !isTimeOutAM ? ' (In)' : isTimeOutAM ? ' (Out)' : ''}
-                            {locationInAM && <span className='text-xs text-gray-500 ml-1'>📍{locationInAM}</span>}
-                            {locationOutAM && <span className='text-xs text-gray-500 ml-1'>📍{locationOutAM}</span>}
+                            {isTimeInAM && !isTimeOutAM ? ' ' : isTimeOutAM ? ' ' : ''}
+                            {locationInAM && <span className='text-xs text-gray-500 ml-1'>{locationInAM}</span>}
+                            {locationOutAM && <span className='text-xs text-gray-500 ml-1'>{locationOutAM}</span>}
                         </span>
                         <span className={`text-sm font-semibold ${isAfternoonSession ? 'text-orange-600' : 'text-gray-400'}`}>
                             Afternoon
-                            {isTimeInPM && !isTimeOutPM ? ' (In)' : isTimeOutPM ? ' (Out)' : ''}
-                            {locationInPM && <span className='text-xs text-gray-500 ml-1'>📍{locationInPM}</span>}
-                            {locationOutPM && <span className='text-xs text-gray-500 ml-1'>📍{locationOutPM}</span>}
+                            {isTimeInPM && !isTimeOutPM ? ' ' : isTimeOutPM ? ' ' : ''}
+                            {locationInPM && <span className='text-xs text-gray-500 ml-1'>{locationInPM}</span>}
+                            {locationOutPM && <span className='text-xs text-gray-500 ml-1'>{locationOutPM}</span>}
                         </span>
                     </div>
 
@@ -925,7 +925,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                         />
                     </div>
                     {isGettingLocation && (
-                        <p className='text-xs text-blue-500 mt-1'>📍 Getting your GPS location...</p>
+                        <p className='text-xs text-blue-500 mt-1'> Getting your GPS location...</p>
                     )}
                 </div>
                 
@@ -1024,7 +1024,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeInAM || '-'}</span>
                                                 {dayData.record?.locationInAM && (
-                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationInAM}</span>
+                                                    <span className='text-xs text-gray-500'>{dayData.record.locationInAM}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -1032,7 +1032,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeOutAM || '-'}</span>
                                                 {dayData.record?.locationOutAM && (
-                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationOutAM}</span>
+                                                    <span className='text-xs text-gray-500'>{dayData.record.locationOutAM}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -1040,7 +1040,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeInPM || '-'}</span>
                                                 {dayData.record?.locationInPM && (
-                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationInPM}</span>
+                                                    <span className='text-xs text-gray-500'>{dayData.record.locationInPM}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -1048,7 +1048,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeOutPM || '-'}</span>
                                                 {dayData.record?.locationOutPM && (
-                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationOutPM}</span>
+                                                    <span className='text-xs text-gray-500'>{dayData.record.locationOutPM}</span>
                                                 )}
                                             </div>
                                         </td>
