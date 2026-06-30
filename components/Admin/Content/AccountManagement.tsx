@@ -1,7 +1,7 @@
 // components/Admin/Content/AccountManagement.tsx
 import ContentHeader from "@/components/ContentHeader"
 import Image from "next/image"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useSession } from "next-auth/react"
 import axios from "axios"
 
@@ -19,10 +19,13 @@ interface Account {
     disabled?: boolean
 }
 
+// Cache key
+const CACHE_KEY = 'accounts_cache'
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
 export default function AccountManagement() {
     const { data: session } = useSession()
     const [accounts, setAccounts] = useState<Account[]>([])
-    const [filteredAccounts, setFilteredAccounts] = useState<Account[]>([])
     const [loading, setLoading] = useState(true)
     const [currentPage, setCurrentPage] = useState(1)
     const [searchTerm, setSearchTerm] = useState('')
@@ -35,7 +38,7 @@ export default function AccountManagement() {
         email: '',
         password: '',
         username: '',
-        role: 'cos',
+        role: 'COS-JO',
         name: '',
         employeeId: ''
     })
@@ -43,7 +46,7 @@ export default function AccountManagement() {
         name: '',
         email: '',
         username: '',
-        role: '',
+        role: 'COS-JO',
         division: '',
         designation: '',
         office: '',
@@ -61,18 +64,19 @@ export default function AccountManagement() {
     const [rq2, setRq2] = useState(false)
     const [rq3, setRq3] = useState(false)
     const itemsPerPage = 10
+    const isLoadingRef = useRef(false)
 
     // Municipalities of Marinduque
-    const municipalities = [
+    const municipalities = useMemo(() => [
         'Boac',
         'Buenavista', 
         'Gasan',
         'Mogpog',
         'Santa Cruz',
         'Torrijos'
-    ]
+    ], [])
 
-    // ✅ Role mapping for display to database
+    // ✅ Role mapping for display to database with proper typing
     const roleMap: Record<string, string> = {
         'COS-JO': 'cos',
         'Division Head': 'division',
@@ -80,7 +84,7 @@ export default function AccountManagement() {
         'Admin': 'admin'
     }
 
-    // ✅ Reverse role mapping for database to display
+    // ✅ Reverse role mapping for database to display with proper typing
     const roleDisplayMap: Record<string, string> = {
         'cos': 'COS-JO',
         'division': 'Division Head',
@@ -88,36 +92,70 @@ export default function AccountManagement() {
         'admin': 'Admin'
     }
 
-    // ✅ Check password requirements
-    function validatePassword(password: string) {
-        setCreateForm({...createForm, password: password})
-        if(password.length >= 7) {
-            setRq1(true)
-        } else {
-            setRq1(false)
+    // ✅ Memoized filtered accounts
+    const filteredAccounts = useMemo(() => {
+        let filtered = [...accounts]
+        
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase()
+            filtered = filtered.filter(account => 
+                account.name.toLowerCase().includes(term) ||
+                account.username.toLowerCase().includes(term) ||
+                account.email.toLowerCase().includes(term) ||
+                account.employeeId.includes(term)
+            )
         }
-        if(password.match(/[A-Z]/) && password.match(/[a-z]/)){
-            setRq2(true)
-        } else {
-            setRq2(false)
-        }
-        if(password.match(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/)){
-            setRq3(true)
-        } else {
-            setRq3(false)
-        }
-    }
+        
+        return filtered
+    }, [accounts, searchTerm])
+
+    // ✅ Memoized paginated accounts
+    const totalPages = useMemo(() => Math.ceil(filteredAccounts.length / itemsPerPage), [filteredAccounts.length])
+    const startIndex = (currentPage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    const currentAccounts = useMemo(() => filteredAccounts.slice(startIndex, endIndex), [filteredAccounts, startIndex, endIndex])
+
+    // ✅ Check password requirements (memoized)
+    const validatePassword = useCallback((password: string) => {
+        setCreateForm(prev => ({...prev, password}))
+        setRq1(password.length >= 7)
+        setRq2(!!password.match(/[A-Z]/) && !!password.match(/[a-z]/))
+        setRq3(!!password.match(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/))
+    }, [])
 
     useEffect(() => {
         fetchAccounts()
     }, [session])
 
-    useEffect(() => {
-        filterAccounts()
-    }, [accounts, searchTerm])
-
-    async function fetchAccounts() {
+    async function fetchAccounts(forceRefresh = false) {
+        // Prevent concurrent execution
+        if (isLoadingRef.current) {
+            console.log('Fetch already in progress, skipping...')
+            return
+        }
+        
+        isLoadingRef.current = true
+        setLoading(true)
+        
         try {
+            // Check cache
+            if (!forceRefresh) {
+                try {
+                    const cached = sessionStorage.getItem(CACHE_KEY)
+                    if (cached) {
+                        const { data, timestamp } = JSON.parse(cached)
+                        if (Date.now() - timestamp < CACHE_DURATION) {
+                            setAccounts(data)
+                            setLoading(false)
+                            isLoadingRef.current = false
+                            return
+                        }
+                    }
+                } catch (e) {
+                    // Cache parse error, continue to fetch
+                }
+            }
+            
             if (!session?.user?.id) return
             
             const response = await axios.get('/api/admin/accounts')
@@ -138,41 +176,31 @@ export default function AccountManagement() {
             }))
             
             setAccounts(formattedAccounts)
+            
+            // Save to cache
+            try {
+                sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+                    data: formattedAccounts,
+                    timestamp: Date.now()
+                }))
+            } catch (e) {
+                // Cache storage error, ignore
+            }
+            
         } catch (error) {
             console.error('Error fetching accounts:', error)
             setAccounts([])
         } finally {
             setLoading(false)
+            isLoadingRef.current = false
         }
     }
 
-    function filterAccounts() {
-        let filtered = [...accounts]
-        
-        if (searchTerm) {
-            const term = searchTerm.toLowerCase()
-            filtered = filtered.filter(account => 
-                account.name.toLowerCase().includes(term) ||
-                account.username.toLowerCase().includes(term) ||
-                account.email.toLowerCase().includes(term) ||
-                account.employeeId.includes(term)
-            )
-        }
-        
-        setFilteredAccounts(filtered)
-        setCurrentPage(1)
-    }
-
-    const totalPages = Math.ceil(filteredAccounts.length / itemsPerPage)
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    const currentAccounts = filteredAccounts.slice(startIndex, endIndex)
-
-    const goToPage = (page: number) => {
+    const goToPage = useCallback((page: number) => {
         if (page >= 1 && page <= totalPages) {
             setCurrentPage(page)
         }
-    }
+    }, [totalPages])
 
     const handleCreateAccount = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -192,7 +220,6 @@ export default function AccountManagement() {
             return
         }
 
-        // ✅ Check password requirements
         if (!rq1 || !rq2 || !rq3) {
             setCreateError('Please meet all password requirements')
             setIsCreating(false)
@@ -200,8 +227,8 @@ export default function AccountManagement() {
         }
 
         try {
-            // ✅ Convert display role to database role
-            const dbRole = roleMap[createForm.role] || 'cos'
+            // ✅ Use type assertion with proper fallback
+            const dbRole = roleMap[createForm.role as keyof typeof roleMap] || 'cos'
 
             const response = await axios.post('/api/admin/create-account', {
                 email: createForm.email,
@@ -218,14 +245,14 @@ export default function AccountManagement() {
                     email: '',
                     password: '',
                     username: '',
-                    role: 'cos',
+                    role: 'COS-JO',
                     name: '',
                     employeeId: ''
                 })
                 setRq1(false)
                 setRq2(false)
                 setRq3(false)
-                await fetchAccounts()
+                await fetchAccounts(true) // Force refresh
                 setTimeout(() => {
                     setShowCreateModal(false)
                     setCreateSuccess('')
@@ -239,13 +266,15 @@ export default function AccountManagement() {
         }
     }
 
-    const handleEditClick = (account: Account) => {
+    const handleEditClick = useCallback((account: Account) => {
         setSelectedAccount(account)
+        // ✅ Use type assertion for role mapping
+        const displayRole = roleDisplayMap[account.role as keyof typeof roleDisplayMap] || 'COS-JO'
         setEditForm({
             name: account.name || '',
             email: account.email || '',
             username: account.username || '',
-            role: roleDisplayMap[account.role] || 'COS-JO',
+            role: displayRole,
             division: account.division || '',
             designation: account.designation || '',
             office: account.office || '',
@@ -254,7 +283,7 @@ export default function AccountManagement() {
         setEditError('')
         setEditSuccess('')
         setShowEditModal(true)
-    }
+    }, [])
 
     const handleEditSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -269,8 +298,8 @@ export default function AccountManagement() {
         }
 
         try {
-            // ✅ Convert display role to database role
-            const dbRole = roleMap[editForm.role] || 'cos'
+            // ✅ Use type assertion with proper fallback
+            const dbRole = roleMap[editForm.role as keyof typeof roleMap] || 'cos'
 
             const payload: any = {
                 name: editForm.name,
@@ -287,7 +316,7 @@ export default function AccountManagement() {
 
             if (response.status === 200) {
                 setEditSuccess('✅ Account updated successfully!')
-                await fetchAccounts()
+                await fetchAccounts(true) // Force refresh
                 setTimeout(() => {
                     setShowEditModal(false)
                     setEditSuccess('')
@@ -301,10 +330,10 @@ export default function AccountManagement() {
         }
     }
 
-    const handleDeleteClick = (account: Account) => {
+    const handleDeleteClick = useCallback((account: Account) => {
         setSelectedAccount(account)
         setShowDeleteModal(true)
-    }
+    }, [])
 
     const handleDeleteConfirm = async () => {
         if (!selectedAccount) return
@@ -315,9 +344,11 @@ export default function AccountManagement() {
             
             if (response.status === 200) {
                 setMessage('✅ Account disabled successfully!')
-                await fetchAccounts()
+                await fetchAccounts(true) // Force refresh
                 setShowDeleteModal(false)
                 setSelectedAccount(null)
+                // Clear cache
+                sessionStorage.removeItem(CACHE_KEY)
                 setTimeout(() => setMessage(''), 3000)
             }
         } catch (error: any) {
@@ -328,7 +359,7 @@ export default function AccountManagement() {
         }
     }
 
-    const getRoleBadge = (role: string) => {
+    const getRoleBadge = useCallback((role: string) => {
         const colors: Record<string, string> = {
             'admin': 'bg-red-100 text-red-700',
             'super_admin': 'bg-purple-100 text-purple-700',
@@ -337,11 +368,72 @@ export default function AccountManagement() {
             'cos': 'bg-gray-100 text-gray-700'
         }
         return colors[role] || 'bg-gray-100 text-gray-700'
-    }
+    }, [])
 
-    const formatRole = (role: string) => {
-        return roleDisplayMap[role] || role
-    }
+    const formatRole = useCallback((role: string) => {
+        return roleDisplayMap[role as keyof typeof roleDisplayMap] || role
+    }, [])
+
+    // ✅ Memoized table row component
+    const TableRow = useCallback(({ account }: { account: Account }) => {
+        const roleBadge = getRoleBadge(account.role)
+        const displayRole = formatRole(account.role)
+        
+        return (
+            <tr key={account.id} className='border-t-[1] border-gray-300 hover:bg-gray-50'>
+                <td className='pl-5 py-2'>{account.employeeId || '-'}</td>
+                <td className='pl-5 py-2'>{account.name}</td>
+                <td className='pl-5 py-2'>{account.username}</td>
+                <td className='pl-5 py-2'>{account.email}</td>
+                <td className='pl-5 py-2'>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${roleBadge}`}>
+                        {displayRole}
+                    </span>
+                    {account.disabled && (
+                        <span className='ml-1 text-xs text-red-500 font-semibold'>(Disabled)</span>
+                    )}
+                </td>
+                <td className='pl-5 py-2'>{account.division || '-'}</td>
+                <td className='pl-5 py-2'>{account.designation || '-'}</td>
+                <td className='pl-5 py-2'>
+                    <div className='flex items-center gap-2'>
+                        <svg 
+                            onClick={() => handleEditClick(account)}
+                            className='cursor-pointer hover:opacity-70 text-blue-600' 
+                            width="16" 
+                            height="16" 
+                            viewBox="0 0 24 24" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                        >
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                        {account.role !== 'admin' && account.role !== 'super_admin' && (
+                            <svg 
+                                onClick={() => handleDeleteClick(account)}
+                                className='cursor-pointer hover:opacity-70 text-red-600' 
+                                width="16" 
+                                height="16" 
+                                viewBox="0 0 24 24" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                strokeWidth="2" 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round"
+                            >
+                                <path d="M3 6h18"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                        )}
+                    </div>
+                </td>
+            </tr>
+        )
+    }, [getRoleBadge, formatRole, handleEditClick, handleDeleteClick])
 
     if (loading) {
         return (
@@ -420,58 +512,7 @@ export default function AccountManagement() {
                                     </tr>
                                 ) : (
                                     currentAccounts.map((account) => (
-                                        <tr key={account.id} className='border-t-[1] border-gray-300 hover:bg-gray-50'>
-                                            <td className='pl-5 py-2'>{account.employeeId || '-'}</td>
-                                            <td className='pl-5 py-2'>{account.name}</td>
-                                            <td className='pl-5 py-2'>{account.username}</td>
-                                            <td className='pl-5 py-2'>{account.email}</td>
-                                            <td className='pl-5 py-2'>
-                                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getRoleBadge(account.role)}`}>
-                                                    {formatRole(account.role)}
-                                                </span>
-                                                {account.disabled && (
-                                                    <span className='ml-1 text-xs text-red-500 font-semibold'>(Disabled)</span>
-                                                )}
-                                            </td>
-                                            <td className='pl-5 py-2'>{account.division || '-'}</td>
-                                            <td className='pl-5 py-2'>{account.designation || '-'}</td>
-                                            <td className='pl-5 py-2'>
-                                                <div className='flex items-center gap-2'>
-                                                    <svg 
-                                                        onClick={() => handleEditClick(account)}
-                                                        className='cursor-pointer hover:opacity-70 text-blue-600' 
-                                                        width="16" 
-                                                        height="16" 
-                                                        viewBox="0 0 24 24" 
-                                                        fill="none" 
-                                                        stroke="currentColor" 
-                                                        strokeWidth="2" 
-                                                        strokeLinecap="round" 
-                                                        strokeLinejoin="round"
-                                                    >
-                                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                                    </svg>
-                                                    {account.role !== 'admin' && account.role !== 'super_admin' && (
-                                                        <svg 
-                                                            onClick={() => handleDeleteClick(account)}
-                                                            className='cursor-pointer hover:opacity-70 text-red-600' 
-                                                            width="16" 
-                                                            height="16" 
-                                                            viewBox="0 0 24 24" 
-                                                            fill="none" 
-                                                            stroke="currentColor" 
-                                                            strokeWidth="2" 
-                                                            strokeLinecap="round" 
-                                                            strokeLinejoin="round"
-                                                        >
-                                                            <path d="M3 6h18"/>
-                                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                                        </svg>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
+                                        <TableRow key={account.id} account={account} />
                                     ))
                                 )}
                             </tbody>
@@ -518,7 +559,7 @@ export default function AccountManagement() {
                                         email: '',
                                         password: '',
                                         username: '',
-                                        role: 'cos',
+                                        role: 'COS-JO',
                                         name: '',
                                         employeeId: ''
                                     })
@@ -671,7 +712,7 @@ export default function AccountManagement() {
                                             email: '',
                                             password: '',
                                             username: '',
-                                            role: 'cos',
+                                            role: 'COS-JO',
                                             name: '',
                                             employeeId: ''
                                         })
