@@ -1,4 +1,4 @@
-// app/home/admin/AdminContent.tsx
+// app/home/admin/AdminContent.tsx - Updated version
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -10,6 +10,7 @@ import Image from "next/image"
 import SidebarButton from "@/components/SidebarButton"
 import DTRManagerContent from "@/components/Admin/Content/DTRManagerContent"
 import CalendarContent from "@/components/Admin/Content/CalendarContent"
+import AccountManagement from "@/components/Admin/Content/AccountManagement"
 import { useSearchParams } from 'next/navigation'
 
 export default function AdminContent() {
@@ -21,6 +22,7 @@ export default function AdminContent() {
     const [dropdown, setDropdown] = useState(true)
     const [manageDTR, setManageDTR] = useState(page === 'manage_dtr')
     const [calendar, setCalendar] = useState(page === 'calendar')
+    const [accountManagement, setAccountManagement] = useState(page === 'accounts')
     
     const { data: session } = useSession()
 
@@ -29,6 +31,7 @@ export default function AdminContent() {
         setSettings(btn === 'settings')
         setManageDTR(btn === 'manage_dtr')
         setCalendar(btn === 'calendar')
+        setAccountManagement(btn === 'accounts')
     }
 
     // Update state when URL parameter changes
@@ -70,6 +73,14 @@ export default function AdminContent() {
                                     btnText='Calendar' 
                                     selected={calendar}
                                 />
+                                <DropdownButton 
+                                    onClick={() => {
+                                        toggleBtn('accounts');
+                                        window.location.href = '/home/admin?page=accounts';
+                                    }} 
+                                    btnText='Accounts' 
+                                    selected={accountManagement}
+                                />
                             </div> :
                             ''
                         }
@@ -95,6 +106,7 @@ export default function AdminContent() {
             <div className='flex flex-1'>
                 {manageDTR ? <DTRManagerContent/> : ''}
                 {calendar ? <CalendarContent/> : ''}
+                {accountManagement ? <AccountManagement/> : ''}
                 {settings ? <SettingContent id={session?.user?.id || ""} username={session?.user?.username || "Admin"} /> : ''}
                 {profile ? <ProfileContent /> : ''}
             </div>

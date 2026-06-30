@@ -8,6 +8,8 @@ import { useSession } from "next-auth/react"
 import Loading from "@/components/Loading"
 import axios from "axios"
 import { useRouter } from "next/navigation"
+import { getAuth, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { auth, database, ref, get } from '@/lib/firebase'
 
 export default function Home() {
     const [isEmailFocused, setIsEmailFocused] = useState(false)
@@ -56,16 +58,50 @@ export default function Home() {
         }
         
         try {
-            const result = await signIn('credentials', { 
-                username: email,
-                password: password, 
-                redirect: false 
-            })
-            
-            if (result?.error) {
-                setMessage('Invalid Email or Password')
+            // ✅ First, sign in with Firebase to check if account is disabled
+            try {
+                const firebaseUser = await signInWithEmailAndPassword(auth, email, password)
+                
+                // ✅ Check if user is disabled in database
+                const userRef = ref(database, `users/${firebaseUser.user.uid}`)
+                const userSnapshot = await get(userRef)
+                
+                if (userSnapshot.exists()) {
+                    const userData = userSnapshot.val()
+                    if (userData.disabled === true) {
+                        // Sign out immediately
+                        await signOut(auth)
+                        setMessage('Your account has been disabled. Please contact the administrator.')
+                        setLoading(false)
+                        return
+                    }
+                }
+                
+                // If not disabled, proceed with NextAuth sign in
+                const result = await signIn('credentials', { 
+                    username: email,
+                    password: password, 
+                    redirect: false 
+                })
+                
+                if (result?.error) {
+                    setMessage('Invalid Email or Password')
+                    setLoading(false)
+                }
+                
+            } catch (firebaseError: any) {
+                console.error('Firebase sign in error:', firebaseError)
+                if (firebaseError.code === 'auth/user-not-found' || firebaseError.code === 'auth/wrong-password') {
+                    setMessage('Invalid Email or Password')
+                } else if (firebaseError.code === 'auth/too-many-requests') {
+                    setMessage('Too many failed attempts. Please try again later.')
+                } else {
+                    setMessage('An error occurred during login. Please try again.')
+                }
                 setLoading(false)
+                return
             }
+            
         } catch (err) {
             console.log(err)
             setMessage('An error occurred during login')
@@ -129,7 +165,7 @@ export default function Home() {
                 
                 {message && (
                     <div className={`w-full text-center text-sm p-2 rounded ${
-                        message.includes('Invalid') || message.includes('error') 
+                        message.includes('Invalid') || message.includes('error') || message.includes('disabled')
                             ? 'bg-red-100 text-red-600' 
                             : 'bg-yellow-100 text-yellow-600'
                     }`}>

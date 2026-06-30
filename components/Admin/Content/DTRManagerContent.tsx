@@ -1,45 +1,78 @@
 // components/Admin/Content/DTRManagerContent.tsx
 import ContentHeader from "@/components/ContentHeader"
 import Image from "next/image"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useSession } from "next-auth/react"
 import axios from "axios"
 
+interface Employee {
+    id: string
+    employeeId: string
+    username: string
+    name: string
+    email: string
+    designation: string
+    division: string
+    office: string
+}
+
+interface DTRRecord {
+    id: string
+    employeeId: string
+    employeeName: string
+    date: string
+    timeInAM: string
+    timeOutAM: string
+    timeInPM: string
+    timeOutPM: string
+    totalHours: string
+    status: string
+    locationInAM: string
+    locationOutAM: string
+    locationInPM: string
+    locationOutPM: string
+}
+
 export default function DTRManagerContent() {
     const { data: session } = useSession()
-    const [employees, setEmployees] = useState<any[]>([])
+    const [employees, setEmployees] = useState<Employee[]>([])
+    const [dtrRecords, setDtrRecords] = useState<DTRRecord[]>([])
+    const [filteredRecords, setFilteredRecords] = useState<DTRRecord[]>([])
+    const [selectedEmployee, setSelectedEmployee] = useState<string>('all')
+    const [selectedMonth, setSelectedMonth] = useState('')
     const [loading, setLoading] = useState(true)
     const [currentPage, setCurrentPage] = useState(1)
-    const [showEditModal, setShowEditModal] = useState(false)
-    const [showDeleteModal, setShowDeleteModal] = useState(false)
-    const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
-    const [editForm, setEditForm] = useState({
-        employeeId: '',
-        username: '',
-        name: '',
-        email: '',
-        division: '',
-        office: '',
-        designation: ''
-    })
-    const [editError, setEditError] = useState('')
-    const [editSuccess, setEditSuccess] = useState('')
-    const [isLoading, setIsLoading] = useState(false)
-    const itemsPerPage = 5
-
-    // Municipalities of Marinduque
-    const municipalities = [
-        'Boac',
-        'Buenavista', 
-        'Gasan',
-        'Mogpog',
-        'Santa Cruz',
-        'Torrijos'
-    ]
+    const [editingRecord, setEditingRecord] = useState<string | null>(null)
+    const [editingStatus, setEditingStatus] = useState<string>('')
+    const [searchTerm, setSearchTerm] = useState('')
+    const [message, setMessage] = useState('')
+    const inputRef = useRef<HTMLInputElement>(null)
+    const itemsPerPage = 10
 
     useEffect(() => {
+        const now = new Date()
+        const month = now.toISOString().slice(0, 7)
+        setSelectedMonth(month)
         fetchEmployees()
     }, [session])
+
+    useEffect(() => {
+        if (employees.length > 0) {
+            fetchAllDTRRecords(selectedMonth)
+        }
+    }, [employees, selectedMonth])
+
+    useEffect(() => {
+        filterRecords()
+    }, [dtrRecords, selectedEmployee, searchTerm])
+
+    // Focus input when editing starts
+    useEffect(() => {
+        if (editingRecord && inputRef.current) {
+            inputRef.current.focus()
+            inputRef.current.select()
+        }
+    }, [editingRecord])
 
     async function fetchEmployees() {
         try {
@@ -48,40 +81,94 @@ export default function DTRManagerContent() {
             const response = await axios.get('/api/admin/employees')
             const data = response.data.data || []
             
-            const formattedEmployees = data.map((user: any, index: number) => {
-                let employeeId = user.employeeId || user.id
-                if (employeeId.length > 5) {
-                    const num = (index + 1).toString().padStart(5, '0')
-                    employeeId = num
-                } else if (employeeId.length < 5) {
-                    employeeId = employeeId.padStart(5, '0')
-                }
-                
-                return {
-                    id: user.id || '',
-                    employeeId: employeeId,
-                    username: user.username || '',
-                    name: user.profile?.name || user.username || 'Unknown',
-                    email: user.email || '',
-                    designation: user.profile?.designation || user.designation || 'N/A',
-                    division: user.profile?.division || '',
-                    office: user.profile?.office || ''
-                }
-            })
+            const formattedEmployees = data.map((user: any, index: number) => ({
+                id: user.id || '',
+                employeeId: (index + 1).toString().padStart(5, '0'),
+                username: user.username || '',
+                name: user.profile?.name || user.username || 'Unknown',
+                email: user.email || '',
+                designation: user.profile?.designation || 'N/A',
+                division: user.profile?.division || '',
+                office: user.profile?.office || ''
+            }))
             
             setEmployees(formattedEmployees)
         } catch (error) {
             console.error('Error fetching employees:', error)
             setEmployees([])
+        }
+    }
+
+    async function fetchAllDTRRecords(month: string) {
+        setLoading(true)
+        const allRecords: DTRRecord[] = []
+        
+        try {
+            for (const employee of employees) {
+                try {
+                    const response = await axios.get(`/api/dtr/${employee.id}`)
+                    const records = response.data.data || []
+                    
+                    const monthRecords = records.filter((record: any) => 
+                        record.date?.startsWith(month)
+                    )
+                    
+                    monthRecords.forEach((record: any) => {
+                        allRecords.push({
+                            id: record.id || '',
+                            employeeId: employee.employeeId,
+                            employeeName: employee.name,
+                            date: record.date || '',
+                            timeInAM: record.timeInAM || '',
+                            timeOutAM: record.timeOutAM || '',
+                            timeInPM: record.timeInPM || '',
+                            timeOutPM: record.timeOutPM || '',
+                            totalHours: record.totalHours || '',
+                            status: record.status || 'Present',
+                            locationInAM: record.locationInAM || '',
+                            locationOutAM: record.locationOutAM || '',
+                            locationInPM: record.locationInPM || '',
+                            locationOutPM: record.locationOutPM || ''
+                        })
+                    })
+                } catch (error) {
+                    console.log(`No DTR records for ${employee.name}`)
+                }
+            }
+            
+            allRecords.sort((a, b) => b.date.localeCompare(a.date))
+            setDtrRecords(allRecords)
+        } catch (error) {
+            console.error('Error fetching DTR records:', error)
+            setDtrRecords([])
         } finally {
             setLoading(false)
         }
     }
 
-    const totalPages = Math.ceil(employees.length / itemsPerPage)
+    function filterRecords() {
+        let filtered = [...dtrRecords]
+        
+        if (selectedEmployee !== 'all') {
+            filtered = filtered.filter(record => record.employeeId === selectedEmployee)
+        }
+        
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase()
+            filtered = filtered.filter(record => 
+                record.employeeName.toLowerCase().includes(term) ||
+                record.employeeId.includes(term)
+            )
+        }
+        
+        setFilteredRecords(filtered)
+        setCurrentPage(1)
+    }
+
+    const totalPages = Math.ceil(filteredRecords.length / itemsPerPage)
     const startIndex = (currentPage - 1) * itemsPerPage
     const endIndex = startIndex + itemsPerPage
-    const currentEmployees = employees.slice(startIndex, endIndex)
+    const currentRecords = filteredRecords.slice(startIndex, endIndex)
 
     const goToPage = (page: number) => {
         if (page >= 1 && page <= totalPages) {
@@ -89,90 +176,74 @@ export default function DTRManagerContent() {
         }
     }
 
-    const handleEditClick = (employee: any) => {
-        setSelectedEmployee(employee)
-        setEditForm({
-            employeeId: employee.employeeId || '',
-            username: employee.username || '',
-            name: employee.name || '',
-            email: employee.email || '',
-            division: employee.division || '',
-            office: employee.office || '',
-            designation: employee.designation || ''
-        })
-        setEditError('')
-        setEditSuccess('')
-        setShowEditModal(true)
+    // ✅ Handle double click to edit status
+    function handleDoubleClick(record: DTRRecord) {
+        setEditingRecord(record.id)
+        setEditingStatus(record.status || '')
     }
 
-    const handleDeleteClick = (employee: any) => {
-        setSelectedEmployee(employee)
-        setShowDeleteModal(true)
+    // ✅ Handle Enter key to save status
+    async function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>, record: DTRRecord) {
+        if (e.key === 'Enter') {
+            e.preventDefault()
+            await saveStatus(record)
+        } else if (e.key === 'Escape') {
+            setEditingRecord(null)
+            setEditingStatus('')
+        }
     }
 
-    const handleEditSubmit = async (e: React.FormEvent) => {
-        e.preventDefault()
-        setEditError('')
-        setEditSuccess('')
-        setIsLoading(true)
-
-        // Validation
-        if (!editForm.employeeId || !editForm.username || !editForm.name || !editForm.email || !editForm.designation) {
-            setEditError('Employee ID, Username, Name, Email, and Designation are required')
-            setIsLoading(false)
-            return
+    // ✅ Handle blur to save status
+    async function handleBlur(record: DTRRecord) {
+        if (editingRecord) {
+            await saveStatus(record)
         }
+    }
 
-        // Validate Employee ID is exactly 5 digits
-        if (!/^\d{5}$/.test(editForm.employeeId)) {
-            setEditError('Employee ID must be exactly 5 digits (e.g., 00001)')
-            setIsLoading(false)
-            return
-        }
-
+    // ✅ Save status to database
+    async function saveStatus(record: DTRRecord) {
+        if (!editingRecord) return
+        
         try {
-            const payload: any = {
-                employeeId: editForm.employeeId,
-                username: editForm.username,
-                name: editForm.name,
-                email: editForm.email,
-                division: editForm.division || '',
-                office: editForm.office || '',
-                designation: editForm.designation || ''
+            const userId = employees.find(emp => emp.employeeId === record.employeeId)?.id
+            
+            if (!userId) {
+                setMessage('❌ Employee not found')
+                setEditingRecord(null)
+                setEditingStatus('')
+                return
             }
 
-            const response = await axios.put(`/api/admin/employees/${selectedEmployee.id}`, payload)
-            
+            const response = await axios.put(`/api/dtr/update-status/${userId}`, {
+                date: record.date,
+                status: editingStatus
+            })
+
             if (response.status === 200) {
-                setEditSuccess('Employee updated successfully!')
-                setTimeout(() => {
-                    setShowEditModal(false)
-                    fetchEmployees()
-                }, 1500)
+                setMessage('✅ Status updated successfully')
+                // Update local state
+                const updatedRecords = dtrRecords.map(r => 
+                    r.id === record.id ? { ...r, status: editingStatus } : r
+                )
+                setDtrRecords(updatedRecords)
+                setEditingRecord(null)
+                setEditingStatus('')
+                
+                // Clear message after 3 seconds
+                setTimeout(() => setMessage(''), 3000)
             }
         } catch (error: any) {
-            console.error('Error updating employee:', error)
-            setEditError(error.response?.data?.message || 'Error updating employee. Please try again.')
-        } finally {
-            setIsLoading(false)
+            console.error('Error updating status:', error)
+            setMessage('❌ Error updating status')
+            setEditingRecord(null)
+            setEditingStatus('')
         }
     }
 
-    const handleDeleteConfirm = async () => {
-        setIsLoading(true)
-        try {
-            const response = await axios.delete(`/api/admin/employees/${selectedEmployee.id}`)
-            
-            if (response.status === 200) {
-                setShowDeleteModal(false)
-                fetchEmployees()
-            }
-        } catch (error: any) {
-            console.error('Error deleting employee:', error)
-            alert(error.response?.data?.message || 'Error deleting employee. Please try again.')
-        } finally {
-            setIsLoading(false)
-        }
+    const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const month = e.target.value
+        setSelectedMonth(month)
+        fetchAllDTRRecords(month)
     }
 
     if (loading) {
@@ -181,7 +252,7 @@ export default function DTRManagerContent() {
                 <ContentHeader/>
                 <div className='flex flex-col bg-white py-5 my-5 mx-10 rounded-xl border-[1] border-black'>
                     <div className='flex justify-center items-center p-10'>
-                        <p className='text-gray-500'>Loading...</p>
+                        <p className='text-gray-500'>Loading DTR records...</p>
                     </div>
                 </div>
             </div>
@@ -192,75 +263,144 @@ export default function DTRManagerContent() {
         <div className='flex flex-col w-full bg-gray-200'>
             <ContentHeader/>
             <div className='flex flex-col bg-white py-5 my-5 mx-10 rounded-xl border-[1] border-black'>
-                <p className='font-bold text-xl ml-5'>Employee Accounts</p>
-                <div className='flex flex-col mb-3 mt-5 border-b-2 border-gray-300'>
-                    <table className='w-full text-gray-600 text-s'>
-                        <thead className='bg-gray-200 border-y-2 border-gray-300'>
-                            <tr>
-                                <td className='pl-10 py-1 font-bold w-40'>Employee ID</td>
-                                <td className='pl-10 py-1 font-bold'>Username</td>
-                                <td className='pl-10 py-1 font-bold'>Name</td>
-                                <td className='pl-10 py-1 font-bold'>Email</td>
-                                <td className='pl-10 py-1 font-bold w-40'>Designation</td>
-                                <td className='pl-10 py-1 font-bold w-40'>Action</td>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {currentEmployees.length === 0 ? (
-                                <tr>
-                                    <td colSpan={6} className='text-center py-4 text-gray-500'>No employees found</td>
-                                </tr>
-                            ) : (
-                                currentEmployees.map((employee) => (
-                                    <tr key={employee.id} className='border-t-[1] border-gray-300 hover:bg-gray-50'>
-                                        <td className='pl-10 py-1'>{employee.employeeId}</td>
-                                        <td className='pl-10 py-1'>{employee.username}</td>
-                                        <td className='pl-10 py-1'>{employee.name}</td>
-                                        <td className='pl-10 py-1'>{employee.email}</td>
-                                        <td className='pl-10 py-1'>{employee.designation}</td>
-                                        <td className='pl-10 py-1'>
-                                            <div className='flex items-center gap-2'>
-                                                <svg 
-                                                    onClick={() => handleEditClick(employee)}
-                                                    className='cursor-pointer hover:opacity-70 text-blue-600' 
-                                                    width="14" 
-                                                    height="14" 
-                                                    viewBox="0 0 24 24" 
-                                                    fill="none" 
-                                                    stroke="currentColor" 
-                                                    strokeWidth="2" 
-                                                    strokeLinecap="round" 
-                                                    strokeLinejoin="round"
-                                                >
-                                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                                </svg>
-                                                <svg 
-                                                    onClick={() => handleDeleteClick(employee)}
-                                                    className='cursor-pointer hover:opacity-70 text-red-600' 
-                                                    width="14" 
-                                                    height="14" 
-                                                    viewBox="0 0 24 24" 
-                                                    fill="none" 
-                                                    stroke="currentColor" 
-                                                    strokeWidth="2" 
-                                                    strokeLinecap="round" 
-                                                    strokeLinejoin="round"
-                                                >
-                                                    <path d="M3 6h18"/>
-                                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                                </svg>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                <div className='flex justify-between items-center px-5 pb-3 border-b border-gray-200'>
+                    <p className='font-bold text-xl'>Manage DTR</p>
+                    <div className='flex items-center gap-4'>
+                        <input 
+                            type='month' 
+                            value={selectedMonth}
+                            onChange={handleMonthChange}
+                            className='border border-gray-300 rounded-lg px-3 py-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                        />
+                        <div className='flex items-center gap-2'>
+                            <select
+                                value={selectedEmployee}
+                                onChange={(e) => setSelectedEmployee(e.target.value)}
+                                className='border border-gray-300 rounded-lg px-3 py-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
+                            >
+                                <option value="all">All Employees</option>
+                                {employees.map(emp => (
+                                    <option key={emp.id} value={emp.employeeId}>
+                                        {emp.name} ({emp.employeeId})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className='flex items-center gap-2'>
+                            <input
+                                type='text'
+                                placeholder='Search by name or ID...'
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className='border border-gray-300 rounded-lg px-3 py-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm w-48'
+                            />
+                        </div>
+                    </div>
                 </div>
+
+                {message && (
+                    <div className={`mx-5 mt-2 p-2 rounded text-sm ${
+                        message.includes('✅') 
+                            ? 'bg-green-100 text-green-700 border border-green-200' 
+                            : 'bg-red-100 text-red-700 border border-red-200'
+                    }`}>
+                        {message}
+                    </div>
+                )}
+
+                <div className='flex flex-col mb-3 mt-3'>
+                    <div className="overflow-x-auto">
+                        <table className='w-full text-gray-600 text-sm'>
+                            <thead className='bg-gray-200 border-y-2 border-gray-300'>
+                                <tr>
+                                    <td className='pl-5 py-2 font-bold'>Employee ID</td>
+                                    <td className='pl-5 py-2 font-bold'>Name</td>
+                                    <td className='pl-5 py-2 font-bold'>Date</td>
+                                    <td className='pl-5 py-2 font-bold'>AM In</td>
+                                    <td className='pl-5 py-2 font-bold'>AM Out</td>
+                                    <td className='pl-5 py-2 font-bold'>PM In</td>
+                                    <td className='pl-5 py-2 font-bold'>PM Out</td>
+                                    <td className='pl-5 py-2 font-bold'>Total Hours</td>
+                                    <td className='pl-5 py-2 font-bold w-48'>Status</td>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {currentRecords.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={9} className='text-center py-4 text-gray-500'>No DTR records found for this month</td>
+                                    </tr>
+                                ) : (
+                                    currentRecords.map((record) => (
+                                        <tr key={record.id} className='border-t-[1] border-gray-300 hover:bg-gray-50'>
+                                            <td className='pl-5 py-2'>{record.employeeId}</td>
+                                            <td className='pl-5 py-2'>{record.employeeName}</td>
+                                            <td className='pl-5 py-2'>{record.date}</td>
+                                            <td className='pl-5 py-2'>
+                                                <div className='flex flex-col'>
+                                                    <span>{record.timeInAM || '-'}</span>
+                                                    {record.locationInAM && (
+                                                        <span className='text-[10px] text-gray-400'>{record.locationInAM}</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className='pl-5 py-2'>
+                                                <div className='flex flex-col'>
+                                                    <span>{record.timeOutAM || '-'}</span>
+                                                    {record.locationOutAM && (
+                                                        <span className='text-[10px] text-gray-400'>{record.locationOutAM}</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className='pl-5 py-2'>
+                                                <div className='flex flex-col'>
+                                                    <span>{record.timeInPM || '-'}</span>
+                                                    {record.locationInPM && (
+                                                        <span className='text-[10px] text-gray-400'>{record.locationInPM}</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className='pl-5 py-2'>
+                                                <div className='flex flex-col'>
+                                                    <span>{record.timeOutPM || '-'}</span>
+                                                    {record.locationOutPM && (
+                                                        <span className='text-[10px] text-gray-400'>{record.locationOutPM}</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className='pl-5 py-2 font-medium'>{record.totalHours || '-'}</td>
+                                            <td className='pl-5 py-2'>
+                                                {editingRecord === record.id ? (
+                                                    <input
+                                                        ref={inputRef}
+                                                        type="text"
+                                                        value={editingStatus}
+                                                        onChange={(e) => setEditingStatus(e.target.value)}
+                                                        onKeyDown={(e) => handleKeyDown(e, record)}
+                                                        onBlur={() => handleBlur(record)}
+                                                        className="border border-blue-500 rounded px-1 py-0.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                        placeholder="Enter status..."
+                                                    />
+                                                ) : (
+                                                    <span 
+                                                        onDoubleClick={() => handleDoubleClick(record)}
+                                                        className="cursor-pointer hover:text-blue-600 hover:underline"
+                                                        title="Double-click to edit status"
+                                                    >
+                                                        {record.status || 'Click to add status'}
+                                                    </span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 {totalPages > 1 && (
-                    <div className='flex justify-between items-center text-sm font-bold text-gray-600 px-8'>
-                        <p>Page {currentPage} of {totalPages}</p>
+                    <div className='flex justify-between items-center text-sm font-bold text-gray-600 px-5 mt-2'>
+                        <p>Page {currentPage} of {totalPages} ({filteredRecords.length} records)</p>
                         <div className='flex gap-3'>
                             <button 
                                 onClick={() => goToPage(currentPage - 1)}
@@ -281,167 +421,6 @@ export default function DTRManagerContent() {
                     </div>
                 )}
             </div>
-
-            {/* Edit Modal */}
-            {showEditModal && (
-                <div className='fixed inset-0 bg-gray-700/50 flex items-center justify-center z-50'>
-                    <div className='bg-white rounded-lg border border-black py-6 w-[500px] max-h-[90vh] overflow-y-auto shadow-2xl'>
-                        <div className='flex pl-6 items-center w-full border-b border-gray-300 pb-4'>
-                            <p className='text-xl font-bold'>Edit Employee</p>
-                        </div>
-                        
-                        <form onSubmit={handleEditSubmit} className='px-6 py-4 space-y-4'>
-                            {editError && (
-                                <div className='bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded text-sm'>
-                                    ❌ {editError}
-                                </div>
-                            )}
-                            {editSuccess && (
-                                <div className='bg-green-100 border border-green-400 text-green-700 px-4 py-2 rounded text-sm'>
-                                    ✅ {editSuccess}
-                                </div>
-                            )}
-                            
-                            <div>
-                                <label className='font-bold text-sm text-gray-700'>Employee ID * (5 digits)</label>
-                                <input
-                                    type='text'
-                                    value={editForm.employeeId}
-                                    onChange={(e) => setEditForm({...editForm, employeeId: e.target.value.replace(/\D/g, '').slice(0, 5)})}
-                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
-                                    placeholder='e.g., 00001'
-                                    required
-                                    maxLength={5}
-                                />
-                            </div>
-                            
-                            <div>
-                                <label className='font-bold text-sm text-gray-700'>Username *</label>
-                                <input
-                                    type='text'
-                                    value={editForm.username}
-                                    onChange={(e) => setEditForm({...editForm, username: e.target.value})}
-                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
-                                    required
-                                />
-                            </div>
-                            
-                            <div>
-                                <label className='font-bold text-sm text-gray-700'>Full Name *</label>
-                                <input
-                                    type='text'
-                                    value={editForm.name}
-                                    onChange={(e) => setEditForm({...editForm, name: e.target.value})}
-                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
-                                    required
-                                />
-                            </div>
-                            
-                            <div>
-                                <label className='font-bold text-sm text-gray-700'>Email *</label>
-                                <input
-                                    type='email'
-                                    value={editForm.email}
-                                    onChange={(e) => setEditForm({...editForm, email: e.target.value})}
-                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
-                                    required
-                                />
-                            </div>
-                            
-                            <div>
-                                <label className='font-bold text-sm text-gray-700'>Division</label>
-                                <input
-                                    type='text'
-                                    value={editForm.division}
-                                    onChange={(e) => setEditForm({...editForm, division: e.target.value})}
-                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
-                                    placeholder='Enter division'
-                                />
-                            </div>
-                            
-                            <div>
-                                <label className='font-bold text-sm text-gray-700'>Office</label>
-                                <select
-                                    value={editForm.office}
-                                    onChange={(e) => setEditForm({...editForm, office: e.target.value})}
-                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm appearance-none bg-white'
-                                >
-                                    <option value="">Select office</option>
-                                    {municipalities.map((municipality) => (
-                                        <option key={municipality} value={municipality}>
-                                            {municipality}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            
-                            <div>
-                                <label className='font-bold text-sm text-gray-700'>Designation *</label>
-                                <input
-                                    type='text'
-                                    value={editForm.designation}
-                                    onChange={(e) => setEditForm({...editForm, designation: e.target.value})}
-                                    className='w-full border border-gray-300 rounded-lg px-4 py-2 mt-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
-                                    required
-                                />
-                            </div>
-                            
-                            <div className='flex justify-end gap-3 pt-4 border-t border-gray-200'>
-                                <button
-                                    type='button'
-                                    onClick={() => setShowEditModal(false)}
-                                    className='border border-gray-300 text-gray-700 rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-gray-100 transition-colors'
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type='submit'
-                                    disabled={isLoading}
-                                    className='bg-blue-600 text-white rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-blue-700 transition-colors disabled:opacity-50'
-                                >
-                                    {isLoading ? 'Saving...' : 'Save Changes'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Delete Modal */}
-            {showDeleteModal && (
-                <div className='fixed inset-0 bg-gray-700/50 flex items-center justify-center z-50'>
-                    <div className='bg-white rounded-lg border border-black py-6 w-[400px] shadow-2xl'>
-                        <div className='flex pl-6 items-center w-full border-b border-gray-300 pb-4'>
-                            <p className='text-xl font-bold'>Delete Employee</p>
-                        </div>
-                        
-                        <div className='px-6 py-4'>
-                            <p className='text-gray-700'>
-                                Are you sure you want to delete <strong>{selectedEmployee?.name}</strong>?
-                                This action cannot be undone.
-                            </p>
-                            
-                            <div className='flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200'>
-                                <button
-                                    type='button'
-                                    onClick={() => setShowDeleteModal(false)}
-                                    className='border border-gray-300 text-gray-700 rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-gray-100 transition-colors'
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type='button'
-                                    onClick={handleDeleteConfirm}
-                                    disabled={isLoading}
-                                    className='bg-red-600 text-white rounded-lg px-5 py-2 cursor-pointer font-bold text-sm hover:bg-red-700 transition-colors disabled:opacity-50'
-                                >
-                                    {isLoading ? 'Deleting...' : 'Delete'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     )
 }
