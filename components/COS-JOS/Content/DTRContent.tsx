@@ -729,7 +729,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                     setTimeInPM(timeString)
                     if (location) setLocationInPM(location)
                 }
-                setMessage(`✅ Time-in recorded (${sessionType})${location ? ` at ${location}` : ''}`)
+                setMessage(`${location ? `  ${location}` : ''}`)
                 setHasTodayRecord(true)
                 await loadData(selectedMonth)
                 await checkTodayRecord()
@@ -818,7 +818,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                     setTimeOutPM(timeString)
                     if (location) setLocationOutPM(location)
                 }
-                setMessage(`✅ Time-out recorded (${sessionType})${location ? ` at ${location}` : ''}`)
+                setMessage(`${location ? `  ${location}` : ''}`)
                 await loadData(selectedMonth)
                 await checkTodayRecord()
             }
