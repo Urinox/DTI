@@ -815,7 +815,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                     setTimeInPM(timeString)
                     setLocationInPM(location)
                 }
-                setMessage(`✅ Time-in recorded (${sessionType}) at 📍${location}`)
+                setMessage(`✅ Time-in recorded (${sessionType}) at ${location}`)
                 setHasTodayRecord(true)
                 await loadData(selectedMonth)
                 await checkTodayRecord()
@@ -913,7 +913,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                     setTimeOutPM(timeString)
                     setLocationOutPM(location)
                 }
-                setMessage(`✅ Time-out recorded (${sessionType}) at 📍${location}`)
+                setMessage(`✅ Time-out recorded (${sessionType}) at ${location}`)
                 await loadData(selectedMonth)
                 await checkTodayRecord()
             }
@@ -1020,7 +1020,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                         />
                     </div>
                     {isGettingLocation && (
-                        <p className='text-xs text-blue-500 mt-1'>📍 Getting your GPS location...</p>
+                        <p className='text-xs text-blue-500 mt-1'>Getting your GPS location...</p>
                     )}
                     {locationPermission === 'denied' && (
                         <button 
@@ -1127,7 +1127,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeInAM || '-'}</span>
                                                 {dayData.record?.locationInAM && (
-                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationInAM}</span>
+                                                    <span className='text-xs text-gray-500'>{dayData.record.locationInAM}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -1135,7 +1135,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeOutAM || '-'}</span>
                                                 {dayData.record?.locationOutAM && (
-                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationOutAM}</span>
+                                                    <span className='text-xs text-gray-500'>{dayData.record.locationOutAM}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -1143,7 +1143,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeInPM || '-'}</span>
                                                 {dayData.record?.locationInPM && (
-                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationInPM}</span>
+                                                    <span className='text-xs text-gray-500'>{dayData.record.locationInPM}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -1151,7 +1151,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeOutPM || '-'}</span>
                                                 {dayData.record?.locationOutPM && (
-                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationOutPM}</span>
+                                                    <span className='text-xs text-gray-500'>{dayData.record.locationOutPM}</span>
                                                 )}
                                             </div>
                                         </td>
