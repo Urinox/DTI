@@ -660,31 +660,34 @@ function getLeaveDetailsForDate(dateStr: string, leaves: LeaveRequest[], overtim
     }
     
     // Check travel orders
-    for (const travelOrder of travelOrders) {
-        const start = new Date(travelOrder.startDate)
-        const end = new Date(travelOrder.endDate)
-        
-        const startYear = start.getFullYear()
-        const startMonth = String(start.getMonth() + 1).padStart(2, '0')
-        const startDay = String(start.getDate()).padStart(2, '0')
-        const startDateStr = `${startYear}-${startMonth}-${startDay}`
-        
-        const endYear = end.getFullYear()
-        const endMonth = String(end.getMonth() + 1).padStart(2, '0')
-        const endDay = String(end.getDate()).padStart(2, '0')
-        const endDateStr = `${endYear}-${endMonth}-${endDay}`
-        
-        if (dateString >= startDateStr && dateString <= endDateStr) {
-            details.push({
-                type: 'Travel Order',
-                purpose: travelOrder.purpose || '',
-                startTime: new Date(travelOrder.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                endTime: new Date(travelOrder.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                destination: travelOrder.destination || ''
-            })
-        }
-    }
+for (const travelOrder of travelOrders) {
+    const start = new Date(travelOrder.startDate)
+    const end = new Date(travelOrder.endDate)
     
+    const startYear = start.getFullYear()
+    const startMonth = String(start.getMonth() + 1).padStart(2, '0')
+    const startDay = String(start.getDate()).padStart(2, '0')
+    const startDateStr = `${startYear}-${startMonth}-${startDay}`
+    
+    const endYear = end.getFullYear()
+    const endMonth = String(end.getMonth() + 1).padStart(2, '0')
+    const endDay = String(end.getDate()).padStart(2, '0')
+    const endDateStr = `${endYear}-${endMonth}-${endDay}`
+    
+    if (dateString >= startDateStr && dateString <= endDateStr) {
+        // ✅ Format as dates instead of times
+        const formattedStartDate = start.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+        const formattedEndDate = end.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+        
+        details.push({
+            type: 'Travel Order',
+            purpose: travelOrder.purpose || '',
+            startDate: formattedStartDate,  // ✅ Changed from startTime
+            endDate: formattedEndDate,      // ✅ Changed from endTime
+            destination: travelOrder.destination || ''
+        })
+    }
+}
     return details
 }
 
@@ -1363,28 +1366,31 @@ function generateMonthDays(month: string) {
                                                         />
                                                     ) : (
                                                         <>
-                                                            {dayData.leaveDetails && dayData.leaveDetails.length > 0 && (
-                                                                <div className='text-xs text-left text-gray-700 space-y-0.5'>
-                                                                    {dayData.leaveDetails.map((detail, index) => {
-                                                                        let displayType = ''
-                                                                        if (detail.type === 'Personal') displayType = 'Personal Calamity'
-                                                                        else if (detail.type === 'Emergency') displayType = 'Sick Leave'
-                                                                        else if (detail.type === 'Official') displayType = 'Vacation Leave'
-                                                                        else if (detail.type === 'Overtime') displayType = 'Overtime'
-                                                                        else if (detail.type === 'Travel Order') displayType = 'Travel Order'
-                                                                        else displayType = detail.type
-                                                                        
-                                                                        return (
-                                                                            <div key={index}>
-                                                                                {displayType}: {detail.purpose}
-                                                                                {(detail.type === 'Personal' || detail.type === 'Emergency' || detail.type === 'Official' || detail.type === 'Overtime') && (
-                                                                                    <span className='text-gray-500'> ({detail.startTime} - {detail.endTime})</span>
-                                                                                )}
-                                                                            </div>
-                                                                        )
-                                                                    })}
-                                                                </div>
-                                                            )}
+{dayData.leaveDetails && dayData.leaveDetails.length > 0 && (
+    <div className='text-xs text-left text-gray-700 space-y-0.5'>
+        {dayData.leaveDetails.map((detail, index) => {
+            let displayType = ''
+            if (detail.type === 'Personal') displayType = 'Personal Calamity'
+            else if (detail.type === 'Emergency') displayType = 'Sick Leave'
+            else if (detail.type === 'Official') displayType = 'Vacation Leave'
+            else if (detail.type === 'Overtime') displayType = 'Overtime'
+            else if (detail.type === 'Travel Order') displayType = 'Travel Order'
+            else displayType = detail.type
+            
+            return (
+                <div key={index}>
+                    {displayType}: {detail.purpose}
+                    {(detail.type === 'Personal' || detail.type === 'Emergency' || detail.type === 'Official' || detail.type === 'Overtime') && (
+                        <span className='text-gray-500'> ({detail.startTime} - {detail.endTime})</span>
+                    )}
+                    {detail.type === 'Travel Order' && detail.startDate && detail.endDate && (
+                        <span className='text-gray-500'> ({detail.startDate} - {detail.endDate})</span>
+                    )}
+                </div>
+            )
+        })}
+    </div>
+)}
                                                             {(!dayData.leaveDetails || dayData.leaveDetails.length === 0) && (
                                                                 <span 
                                                                     onDoubleClick={() => {

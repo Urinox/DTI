@@ -330,17 +330,22 @@ export default function DTRManagerContent() {
             }
         }
         
-        for (const travelOrder of travelOrderRanges) {
-            if (dateStr >= travelOrder.startStr && dateStr <= travelOrder.endStr) {
-                details.push({
-                    type: 'Travel Order',
-                    purpose: travelOrder.purpose || '',
-                    startTime: new Date(travelOrder.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                    endTime: new Date(travelOrder.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                    destination: travelOrder.destination || ''
-                })
-            }
-        }
+for (const travelOrder of travelOrderRanges) {
+    if (dateStr >= travelOrder.startStr && dateStr <= travelOrder.endStr) {
+        const start = new Date(travelOrder.startDate)
+        const end = new Date(travelOrder.endDate)
+        const formattedStartDate = start.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+        const formattedEndDate = end.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+        
+        details.push({
+            type: 'Travel Order',
+            purpose: travelOrder.purpose || '',
+            startDate: formattedStartDate,  // ✅ This is the key field
+            endDate: formattedEndDate,      // ✅ This is the key field
+            destination: travelOrder.destination || ''
+        })
+    }
+}
         
         return details
     }
@@ -458,6 +463,11 @@ async function fetchAllDTRRecords(month: string, forceRefresh = false) {
                 const leaveDetails = getLeaveDetailsForDateOptimized(record.date, passSlips, overtimes, travelOrders)
                 let displayStatus = record.status || 'Present'
                 
+                // ✅ Log the leave details to debug
+                if (leaveDetails.length > 0) {
+                    console.log(`📋 Leave details for ${record.date}:`, leaveDetails)
+                }
+                
                 if (leaveDetails.length > 0) {
                     let foundStatus = false
                     
@@ -525,7 +535,7 @@ async function fetchAllDTRRecords(month: string, forceRefresh = false) {
                     locationOutAM: record.locationOutAM || '',
                     locationInPM: record.locationInPM || '',
                     locationOutPM: record.locationOutPM || '',
-                    leaveDetails: leaveDetails.length > 0 ? leaveDetails : []
+                    leaveDetails: leaveDetails.length > 0 ? leaveDetails : []  // ✅ Preserve full details
                 })
             }
         }
@@ -892,37 +902,44 @@ async function fetchAllDTRRecords(month: string, forceRefresh = false) {
                             <p className="text-sm text-gray-600 mb-2">
                                 <span className="font-semibold">Date:</span> {selectedDetail.record.date}
                             </p>
-                            {selectedDetail.details.map((detail: any, index: number) => {
-                                let displayType = ''
-                                if (detail.type === 'Personal') displayType = 'Personal Calamity'
-                                else if (detail.type === 'Emergency') displayType = 'Sick Leave'
-                                else if (detail.type === 'Official') displayType = 'Vacation Leave'
-                                else if (detail.type === 'Overtime') displayType = 'Overtime'
-                                else if (detail.type === 'Travel Order') displayType = 'Travel Order'
-                                else displayType = detail.type
-                                
-                                return (
-                                    <div key={index} className="bg-gray-50 rounded p-3 mb-3">
-                                        <p className="text-sm font-semibold text-gray-800">{displayType}</p>
-                                        {detail.purpose && (
-                                            <p className="text-sm text-gray-600 mt-1">
-                                                <span className="font-medium">Purpose:</span> {detail.purpose}
-                                            </p>
-                                        )}
-                                        {/* ✅ Only show destination if it exists and type is not Overtime */}
-                                        {detail.destination && detail.type !== 'Overtime' && (
-                                            <p className="text-sm text-gray-600">
-                                                <span className="font-medium">Destination:</span> {detail.destination}
-                                            </p>
-                                        )}
-                                        {(detail.startTime && detail.endTime) && (
-                                            <p className="text-sm text-gray-600">
-                                                <span className="font-medium">Time:</span> {detail.startTime} - {detail.endTime}
-                                            </p>
-                                        )}
-                                    </div>
-                                )
-                            })}
+{selectedDetail.details.map((detail: any, index: number) => {
+    let displayType = ''
+    if (detail.type === 'Personal') displayType = 'Personal Calamity'
+    else if (detail.type === 'Emergency') displayType = 'Sick Leave'
+    else if (detail.type === 'Official') displayType = 'Vacation Leave'
+    else if (detail.type === 'Overtime') displayType = 'Overtime'
+    else if (detail.type === 'Travel Order') displayType = 'Travel Order'
+    else displayType = detail.type
+    
+    return (
+        <div key={index} className="bg-gray-50 rounded p-3 mb-3">
+            <p className="text-sm font-semibold text-gray-800">{displayType}</p>
+            {detail.purpose && (
+                <p className="text-sm text-gray-600 mt-1">
+                    <span className="font-medium">Purpose:</span> {detail.purpose}
+                </p>
+            )}
+            {/* ✅ Show destination if it exists and type is not Overtime */}
+            {detail.destination && detail.type !== 'Overtime' && (
+                <p className="text-sm text-gray-600">
+                    <span className="font-medium">Destination:</span> {detail.destination}
+                </p>
+            )}
+            {/* ✅ Show dates for Travel Order */}
+            {detail.type === 'Travel Order' && detail.startDate && detail.endDate && (
+                <p className="text-sm text-gray-600">
+                    <span className="font-medium">Dates:</span> {detail.startDate} - {detail.endDate}
+                </p>
+            )}
+            {/* ✅ Show times for other types */}
+            {(detail.type !== 'Travel Order' && detail.startTime && detail.endTime) && (
+                <p className="text-sm text-gray-600">
+                    <span className="font-medium">Time:</span> {detail.startTime} - {detail.endTime}
+                </p>
+            )}
+        </div>
+    )
+})}
                         </div>
                         <div className="mt-4 flex justify-end">
                             <button
