@@ -1,6 +1,6 @@
 // app/api/dtr/[userId]/route.ts
 import { NextRequest, NextResponse } from "next/server"
-import { database, ref, get, set, push, update } from '@/lib/firebase'  // ✅ Removed unused imports
+import { database, ref, get, set, push, update } from '@/lib/firebase'
 import { auth } from '@/auth'
 
 // GET - Fetch DTR records for a user
@@ -81,7 +81,7 @@ export async function POST(
             }, { status: 401 })
         }
 
-        const { date, session: sessionType, timeInAM, timeInPM } = await request.json()
+        const { date, session: sessionType, timeInAM, timeInPM, location, locationInAM, locationInPM } = await request.json()
         
         if (!date || !sessionType) {
             return NextResponse.json({ 
@@ -114,8 +114,14 @@ export async function POST(
             
             if (sessionType === 'morning') {
                 updates.timeInAM = timeInAM
+                if (locationInAM || location) {
+                    updates.locationInAM = locationInAM || location
+                }
             } else {
                 updates.timeInPM = timeInPM
+                if (locationInPM || location) {
+                    updates.locationInPM = locationInPM || location
+                }
             }
             
             await update(recordRef, updates)
@@ -132,6 +138,10 @@ export async function POST(
                 timeOutAM: '',
                 timeInPM: '',
                 timeOutPM: '',
+                locationInAM: '',
+                locationOutAM: '',
+                locationInPM: '',
+                locationOutPM: '',
                 totalHours: '',
                 status: 'Present',
                 createdAt: new Date().toISOString(),
@@ -140,8 +150,10 @@ export async function POST(
             
             if (sessionType === 'morning') {
                 newRecord.timeInAM = timeInAM
+                newRecord.locationInAM = locationInAM || location || ''
             } else {
                 newRecord.timeInPM = timeInPM
+                newRecord.locationInPM = locationInPM || location || ''
             }
             
             await set(newRecordRef, newRecord)
@@ -179,7 +191,7 @@ export async function PUT(
             }, { status: 401 })
         }
 
-        const { date, session: sessionType, timeOutAM, timeOutPM } = await request.json()
+        const { date, session: sessionType, timeOutAM, timeOutPM, location, locationOutAM, locationOutPM } = await request.json()
         
         if (!date || !sessionType) {
             return NextResponse.json({ 
@@ -219,8 +231,14 @@ export async function PUT(
         
         if (sessionType === 'morning') {
             updates.timeOutAM = timeOutAM
+            if (locationOutAM || location) {
+                updates.locationOutAM = locationOutAM || location
+            }
         } else {
             updates.timeOutPM = timeOutPM
+            if (locationOutPM || location) {
+                updates.locationOutPM = locationOutPM || location
+            }
         }
         
         // Calculate total hours if both AM and PM are complete

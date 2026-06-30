@@ -15,6 +15,10 @@ interface DTRRecord {
     totalHours: string
     status: string
     leaveStatus?: string
+    locationInAM?: string
+    locationOutAM?: string
+    locationInPM?: string
+    locationOutPM?: string
 }
 
 interface LeaveRequest {
@@ -33,6 +37,15 @@ interface OvertimeRequest {
     status: string
 }
 
+interface TravelOrderRequest {
+    id: string
+    startDate: string
+    endDate: string
+    purpose: string
+    destination: string
+    status: string
+}
+
 export default function DTRContent({username, userId}: {username: string, userId?: string}) {
     const { data: session } = useSession()
     const [currentTime, setCurrentTime] = useState(new Date())
@@ -40,6 +53,10 @@ export default function DTRContent({username, userId}: {username: string, userId
     const [timeOutAM, setTimeOutAM] = useState<string | null>(null)
     const [timeInPM, setTimeInPM] = useState<string | null>(null)
     const [timeOutPM, setTimeOutPM] = useState<string | null>(null)
+    const [locationInAM, setLocationInAM] = useState<string | null>(null)
+    const [locationOutAM, setLocationOutAM] = useState<string | null>(null)
+    const [locationInPM, setLocationInPM] = useState<string | null>(null)
+    const [locationOutPM, setLocationOutPM] = useState<string | null>(null)
     const [isTimeInAM, setIsTimeInAM] = useState(false)
     const [isTimeOutAM, setIsTimeOutAM] = useState(false)
     const [isTimeInPM, setIsTimeInPM] = useState(false)
@@ -49,6 +66,7 @@ export default function DTRContent({username, userId}: {username: string, userId
     const [dtrRecords, setDtrRecords] = useState<DTRRecord[]>([])
     const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
     const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([])
+    const [travelOrderRequests, setTravelOrderRequests] = useState<TravelOrderRequest[]>([])
     const [selectedMonth, setSelectedMonth] = useState('')
     const [editingRecord, setEditingRecord] = useState<string | null>(null)
     const [editingStatus, setEditingStatus] = useState<string>('')
@@ -58,10 +76,13 @@ export default function DTRContent({username, userId}: {username: string, userId
         overtime: '0',
         sickLeave: '0',
         vacationLeave: '0',
-        personalCalamity: '0'
+        personalCalamity: '0',
+        travelOrder: '0'
     })
     const [hasTodayRecord, setHasTodayRecord] = useState(false)
     const inputRef = useRef<HTMLInputElement>(null)
+    const [isGettingLocation, setIsGettingLocation] = useState(false)
+    const [locationPermission, setLocationPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown')
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -91,11 +112,136 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }, [editingRecord])
 
-    // ✅ Load both leave requests, overtime requests, and DTR records sequentially
+    // ✅ Check location permission status
+    useEffect(() => {
+        async function checkPermission() {
+            if (navigator.permissions) {
+                try {
+                    const result = await navigator.permissions.query({ name: 'geolocation' })
+                    setLocationPermission(result.state as 'granted' | 'denied' | 'prompt')
+                    
+                    // Listen for permission changes
+                    result.onchange = () => {
+                        setLocationPermission(result.state as 'granted' | 'denied' | 'prompt')
+                        if (result.state === 'granted') {
+                            setMessage('✅ Location access granted. You can now time-in/out.')
+                        } else if (result.state === 'denied') {
+                            setMessage('⚠️ Location access denied. Please enable location in browser settings.')
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking permission:', error)
+                }
+            }
+        }
+        checkPermission()
+    }, [])
+
+    // ✅ Request location permission
+    async function requestLocationPermission(): Promise<boolean> {
+        try {
+            const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 5000
+                })
+            })
+            if (position) {
+                setLocationPermission('granted')
+                return true
+            }
+            return false
+        } catch (error: any) {
+            if (error.code === 1) {
+                setLocationPermission('denied')
+                setMessage('⚠️ Location access denied. Please enable location in browser settings and refresh the page.')
+            }
+            return false
+        }
+    }
+
+    // ✅ Get real-time GPS location with permission handling
+    async function getCurrentLocation(): Promise<string> {
+        // First, check if we have permission
+        if (locationPermission === 'denied') {
+            return 'GPS access denied - Please enable location in browser settings and refresh the page'
+        }
+
+        // If permission is unknown or prompt, try to request it
+        if (locationPermission === 'unknown' || locationPermission === 'prompt') {
+            const granted = await requestLocationPermission()
+            if (!granted) {
+                return 'GPS access denied - Please allow location access'
+            }
+        }
+
+        return new Promise((resolve) => {
+            if (!navigator.geolocation) {
+                resolve('GPS not available on this device')
+                return
+            }
+
+            const timeoutId = setTimeout(() => {
+                resolve('GPS location timeout')
+            }, 15000)
+
+            setIsGettingLocation(true)
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    clearTimeout(timeoutId)
+                    setIsGettingLocation(false)
+                    const { latitude, longitude } = position.coords
+                    
+                    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data && data.display_name) {
+                                const address = data.display_name.split(',').slice(0, 3).join(',')
+                                resolve(address)
+                            } else {
+                                resolve(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+                            }
+                        })
+                        .catch(() => {
+                            resolve(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+                        })
+                },
+                (error) => {
+                    clearTimeout(timeoutId)
+                    setIsGettingLocation(false)
+                    console.error('Geolocation error:', error.message)
+                    
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            setLocationPermission('denied')
+                            resolve('GPS access denied - Please allow location in browser settings and refresh')
+                            break
+                        case error.POSITION_UNAVAILABLE:
+                            resolve('GPS signal unavailable - Please enable GPS or move to an open area')
+                            break
+                        case error.TIMEOUT:
+                            resolve('GPS location timeout - Please try again')
+                            break
+                        default:
+                            resolve(`GPS error: ${error.message}`)
+                    }
+                },
+                { 
+                    enableHighAccuracy: true, 
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            )
+        })
+    }
+
+    // ✅ Load both leave requests, overtime requests, travel order requests, and DTR records sequentially
     async function loadData(month: string) {
         const approvedLeaves = await fetchLeaveRequests()
         const approvedOvertimes = await fetchOvertimeRequests()
-        await fetchDTRRecords(month, approvedLeaves, approvedOvertimes)
+        const approvedTravelOrders = await fetchTravelOrderRequests()
+        await fetchDTRRecords(month, approvedLeaves, approvedOvertimes, approvedTravelOrders)
     }
 
     // ✅ Session detection
@@ -238,6 +384,29 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }
 
+    // ✅ Fetch ALL approved travel order requests
+    async function fetchTravelOrderRequests() {
+        if (!session?.user?.id) return []
+        
+        try {
+            const response = await axios.get(`/api/travel_order/${session.user.id}`)
+            const records = response.data.data || []
+            
+            const approvedTravelOrders = records.filter((record: any) => {
+                return record.status === 'Approved'
+            })
+            
+            setTravelOrderRequests(approvedTravelOrders)
+            return approvedTravelOrders
+        } catch (error: any) {
+            if (error.response?.status !== 404) {
+                console.error('Error fetching travel orders:', error)
+            }
+            setTravelOrderRequests([])
+            return []
+        }
+    }
+
     // ✅ Calculate statistics from DTR records with leave data
     function calculateRealStats(records: DTRRecord[]) {
         let tardiness = 0
@@ -303,6 +472,22 @@ export default function DTRContent({username, userId}: {username: string, userId
         return count
     }
 
+    // ✅ Count approved travel order requests for the selected month
+    function countTravelOrderRequests(travelOrders: TravelOrderRequest[], month: string) {
+        let count = 0
+        
+        travelOrders.forEach(travelOrder => {
+            const startDate = new Date(travelOrder.startDate)
+            const monthStr = startDate.toISOString().slice(0, 7)
+            
+            if (monthStr === month) {
+                count++
+            }
+        })
+        
+        return count
+    }
+
     // ✅ Check if a date has an approved pass slip and map to DTR status
     function getLeaveStatusForDate(dateStr: string, leaves: LeaveRequest[]): string | null {
         const date = new Date(dateStr)
@@ -334,6 +519,10 @@ export default function DTRContent({username, userId}: {username: string, userId
                 setTimeOutAM(todayRecord.timeOutAM || null)
                 setTimeInPM(todayRecord.timeInPM || null)
                 setTimeOutPM(todayRecord.timeOutPM || null)
+                setLocationInAM(todayRecord.locationInAM || null)
+                setLocationOutAM(todayRecord.locationOutAM || null)
+                setLocationInPM(todayRecord.locationInPM || null)
+                setLocationOutPM(todayRecord.locationOutPM || null)
                 setIsTimeInAM(!!todayRecord.timeInAM)
                 setIsTimeOutAM(!!todayRecord.timeOutAM)
                 setIsTimeInPM(!!todayRecord.timeInPM)
@@ -344,6 +533,10 @@ export default function DTRContent({username, userId}: {username: string, userId
                 setTimeOutAM(null)
                 setTimeInPM(null)
                 setTimeOutPM(null)
+                setLocationInAM(null)
+                setLocationOutAM(null)
+                setLocationInPM(null)
+                setLocationOutPM(null)
                 setIsTimeInAM(false)
                 setIsTimeOutAM(false)
                 setIsTimeInPM(false)
@@ -365,7 +558,7 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }
 
-    async function fetchDTRRecords(month: string, leaves: LeaveRequest[] = [], overtimes: OvertimeRequest[] = []) {
+    async function fetchDTRRecords(month: string, leaves: LeaveRequest[] = [], overtimes: OvertimeRequest[] = [], travelOrders: TravelOrderRequest[] = []) {
         if (!session?.user?.id) return
         
         try {
@@ -393,7 +586,11 @@ export default function DTRContent({username, userId}: {username: string, userId
                         record.timeOutPM
                     ),
                     status: record.status || 'Present',
-                    leaveStatus: leaveStatus || undefined
+                    leaveStatus: leaveStatus || undefined,
+                    locationInAM: record.locationInAM || '',
+                    locationOutAM: record.locationOutAM || '',
+                    locationInPM: record.locationInPM || '',
+                    locationOutPM: record.locationOutPM || ''
                 }
                 
                 return formatted
@@ -426,13 +623,17 @@ export default function DTRContent({username, userId}: {username: string, userId
             // ✅ Count approved overtime requests for the month and combine with DTR overtime
             const approvedOvertimeCount = countOvertimeRequests(overtimes, month)
             
+            // ✅ Count approved travel order requests for the month
+            const approvedTravelOrderCount = countTravelOrderRequests(travelOrders, month)
+            
             const finalStats = {
                 tardiness: dtrStats.tardiness.toString(),
                 undertime: dtrStats.undertime.toString(),
                 overtime: (dtrStats.overtime + approvedOvertimeCount).toString(),
                 sickLeave: (dtrStats.sickLeave + additionalSickLeave).toString(),
                 vacationLeave: (dtrStats.vacationLeave + additionalVacationLeave).toString(),
-                personalCalamity: (dtrStats.personalCalamity + additionalPersonalCalamity).toString()
+                personalCalamity: (dtrStats.personalCalamity + additionalPersonalCalamity).toString(),
+                travelOrder: approvedTravelOrderCount.toString()
             }
             
             setStats(finalStats)
@@ -539,6 +740,12 @@ export default function DTRContent({username, userId}: {username: string, userId
             return
         }
 
+        // Check if location is denied
+        if (locationPermission === 'denied') {
+            setMessage('⚠️ Location access is blocked. Please enable location in browser settings and refresh the page.')
+            return
+        }
+
         if (!isTimeAllowed()) {
             setMessage('Time-in is only available from 6:00 AM to 7:00 PM')
             return
@@ -568,19 +775,32 @@ export default function DTRContent({username, userId}: {username: string, userId
         setMessage('')
 
         try {
+            // ✅ Get real-time GPS location first
+            const location = await getCurrentLocation()
+            
+            // Check if location is valid (not an error message)
+            if (location.includes('GPS') || location.includes('denied') || location.includes('unavailable') || location.includes('timeout')) {
+                setMessage(`⚠️ ${location}`)
+                setLoading(false)
+                return
+            }
+
             const now = new Date()
             const timeString = now.toTimeString().split(' ')[0]
             const dateString = now.toISOString().split('T')[0]
             
             const payload: any = {
                 date: dateString,
-                session: sessionType
+                session: sessionType,
+                location: location
             }
             
             if (sessionType === 'morning') {
                 payload.timeInAM = timeString
+                payload.locationInAM = location
             } else {
                 payload.timeInPM = timeString
+                payload.locationInPM = location
             }
             
             const response = await axios.post(`/api/dtr/${session.user.id}`, payload)
@@ -589,11 +809,13 @@ export default function DTRContent({username, userId}: {username: string, userId
                 if (sessionType === 'morning') {
                     setIsTimeInAM(true)
                     setTimeInAM(timeString)
+                    setLocationInAM(location)
                 } else {
                     setIsTimeInPM(true)
                     setTimeInPM(timeString)
+                    setLocationInPM(location)
                 }
-                setMessage(`Time-in recorded (${sessionType})`)
+                setMessage(`✅ Time-in recorded (${sessionType}) at 📍${location}`)
                 setHasTodayRecord(true)
                 await loadData(selectedMonth)
                 await checkTodayRecord()
@@ -609,6 +831,12 @@ export default function DTRContent({username, userId}: {username: string, userId
     async function handleTimeOut() {
         if (!session?.user?.id) {
             setMessage('Please login first')
+            return
+        }
+
+        // Check if location is denied
+        if (locationPermission === 'denied') {
+            setMessage('⚠️ Location access is blocked. Please enable location in browser settings and refresh the page.')
             return
         }
 
@@ -645,19 +873,32 @@ export default function DTRContent({username, userId}: {username: string, userId
         setMessage('')
 
         try {
+            // ✅ Get real-time GPS location first
+            const location = await getCurrentLocation()
+            
+            // Check if location is valid (not an error message)
+            if (location.includes('GPS') || location.includes('denied') || location.includes('unavailable') || location.includes('timeout')) {
+                setMessage(`⚠️ ${location}`)
+                setLoading(false)
+                return
+            }
+
             const now = new Date()
             const timeString = now.toTimeString().split(' ')[0]
             const dateString = now.toISOString().split('T')[0]
             
             const payload: any = {
                 date: dateString,
-                session: sessionType
+                session: sessionType,
+                location: location
             }
             
             if (sessionType === 'morning') {
                 payload.timeOutAM = timeString
+                payload.locationOutAM = location
             } else {
                 payload.timeOutPM = timeString
+                payload.locationOutPM = location
             }
             
             const response = await axios.put(`/api/dtr/${session.user.id}`, payload)
@@ -666,11 +907,13 @@ export default function DTRContent({username, userId}: {username: string, userId
                 if (sessionType === 'morning') {
                     setIsTimeOutAM(true)
                     setTimeOutAM(timeString)
+                    setLocationOutAM(location)
                 } else {
                     setIsTimeOutPM(true)
                     setTimeOutPM(timeString)
+                    setLocationOutPM(location)
                 }
-                setMessage(`Time-out recorded (${sessionType})`)
+                setMessage(`✅ Time-out recorded (${sessionType}) at 📍${location}`)
                 await loadData(selectedMonth)
                 await checkTodayRecord()
             }
@@ -734,20 +977,24 @@ export default function DTRContent({username, userId}: {username: string, userId
                     <div className='flex gap-4 mt-1'>
                         <span className={`text-sm font-semibold ${isMorningSession ? 'text-green-600' : 'text-gray-400'}`}>
                             Morning
-                            {isTimeInAM && !isTimeOutAM ? ' (In)' : isTimeOutAM ? ' (Out)' : ''}
+                            {isTimeInAM && !isTimeOutAM ? '' : isTimeOutAM ? '' : ''}
                         </span>
                         <span className={`text-sm font-semibold ${isAfternoonSession ? 'text-orange-600' : 'text-gray-400'}`}>
                             Afternoon
-                            {isTimeInPM && !isTimeOutPM ? ' (In)' : isTimeOutPM ? ' (Out)' : ''}
+                            {isTimeInPM && !isTimeOutPM ? '' : isTimeOutPM ? '' : ''}
                         </span>
                     </div>
 
-                   {/*} {!timeAllowed && (
+                    {!timeAllowed && (
                         <p className='text-xs text-red-500 mt-1'>Time-in/out available from 6:00 AM to 7:00 PM</p>
-                    )}*/}
+                    )}
+
+                    {locationPermission === 'denied' && (
+                        <p className='text-xs text-red-500 mt-1'>⚠️ Location access blocked. Please enable in browser settings and refresh.</p>
+                    )}
 
                     {message && (
-                        <p className={`text-sm font-semibold ${message.includes('✅') ? 'text-green-600' : message.includes('❌') ? 'text-red-600' : 'text-blue-600'}`}>
+                        <p className={`text-sm font-semibold ${message.includes('✅') ? 'text-green-600' : message.includes('⚠️') ? 'text-yellow-600' : message.includes('❌') ? 'text-red-600' : 'text-blue-600'}`}>
                             {message}
                         </p>
                     )}
@@ -758,51 +1005,68 @@ export default function DTRContent({username, userId}: {username: string, userId
                                 isTimeInDisabled ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
                             }`}
                             type='button' 
-                            value='Time In'
+                            value={isGettingLocation ? 'Getting GPS...' : 'Time In'}
                             onClick={handleTimeIn}
-                            disabled={isTimeInDisabled}
+                            disabled={isTimeInDisabled || isGettingLocation || locationPermission === 'denied'}
                         />
                         <input 
                             className={`font-semibold text-white px-6 py-1 rounded-lg cursor-pointer transition-colors disabled:opacity-50 ${
                                 isTimeOutDisabled ? 'bg-gray-500 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'
                             }`}
                             type='button' 
-                            value='Time Out'
+                            value={isGettingLocation ? 'Getting GPS...' : 'Time Out'}
                             onClick={handleTimeOut}
-                            disabled={isTimeOutDisabled}
+                            disabled={isTimeOutDisabled || isGettingLocation || locationPermission === 'denied'}
                         />
                     </div>
+                    {isGettingLocation && (
+                        <p className='text-xs text-blue-500 mt-1'>📍 Getting your GPS location...</p>
+                    )}
+                    {locationPermission === 'denied' && (
+                        <button 
+                            onClick={() => window.location.reload()}
+                            className='text-xs text-blue-600 underline mt-1 cursor-pointer'
+                        >
+                            Refresh page after enabling location
+                        </button>
+                    )}
                 </div>
                 
-                <div className='flex bg-white items-center justify-evenly my-5 mr-10 flex-1 rounded-xl border border-black'>
-                    <div className='flex flex-col gap-5'>
+                {/* Statistics Card - Arranged in Rows */}
+                <div className='flex flex-col bg-white items-center justify-evenly my-5 mr-10 flex-1 rounded-xl border border-black py-5'>
+                    {/* Row 1: Tardiness, Personal Calamity, Sick Leave */}
+                    <div className='flex w-full justify-evenly'>
                         <div className='flex flex-col items-center'>
                             <p className='font-bold text-[rgba(0,20,121,1)]'>Tardiness</p>
                             <p className='text-3xl'>{stats.tardiness}</p>
                         </div>
                         <div className='flex flex-col items-center'>
-                            <p className='font-bold text-[rgba(0,20,121,1)]'>Undertime</p>
-                            <p className='text-3xl'>{stats.undertime}</p>
-                        </div>
-                    </div>
-                    <div className='flex flex-col gap-5'>
-                        <div className='flex flex-col items-center'>
                             <p className='font-bold text-[rgba(0,20,121,1)]'>Personal Calamity</p>
                             <p className='text-3xl'>{stats.personalCalamity}</p>
+                        </div>
+                        <div className='flex flex-col items-center'>
+                            <p className='font-bold text-[rgba(0,20,121,1)]'>Sick Leave</p>
+                            <p className='text-3xl'>{stats.sickLeave}</p>
+                        </div>
+                    </div>
+
+                    {/* Row 2: Undertime, Overtime, Vacation Leave, Travel Order */}
+                    <div className='flex w-full justify-evenly mt-2'>
+                        <div className='flex flex-col items-center'>
+                            <p className='font-bold text-[rgba(0,20,121,1)]'>Undertime</p>
+                            <p className='text-3xl'>{stats.undertime}</p>
                         </div>
                         <div className='flex flex-col items-center'>
                             <p className='font-bold text-[rgba(0,20,121,1)]'>Overtime</p>
                             <p className='text-3xl'>{stats.overtime}</p>
                         </div>
-                    </div>
-                    <div className='flex flex-col gap-5'>
-                        <div className='flex flex-col items-center'>
-                            <p className='font-bold text-[rgba(0,20,121,1)]'>Sick Leave</p>
-                            <p className='text-3xl'>{stats.sickLeave}</p>
-                        </div>
                         <div className='flex flex-col items-center'>
                             <p className='font-bold text-[rgba(0,20,121,1)]'>Vacation Leave</p>
                             <p className='text-3xl'>{stats.vacationLeave}</p>
+                        </div>
+                        <div className='flex flex-col items-center'>
+                            <p className='font-bold text-[rgba(0,20,121,1)]'>Travel Order</p>
+                            <p className='text-3xl'>{stats.travelOrder}</p>
                         </div>
                     </div>
                 </div>
@@ -860,16 +1124,36 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             {dayData.day}
                                         </td>
                                         <td className='border-r border-gray-400'>
-                                            {dayData.record?.timeInAM || '-'}
+                                            <div className='flex flex-col'>
+                                                <span>{dayData.record?.timeInAM || '-'}</span>
+                                                {dayData.record?.locationInAM && (
+                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationInAM}</span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className='border-r border-gray-400'>
-                                            {dayData.record?.timeOutAM || '-'}
+                                            <div className='flex flex-col'>
+                                                <span>{dayData.record?.timeOutAM || '-'}</span>
+                                                {dayData.record?.locationOutAM && (
+                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationOutAM}</span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className='border-r border-gray-400'>
-                                            {dayData.record?.timeInPM || '-'}
+                                            <div className='flex flex-col'>
+                                                <span>{dayData.record?.timeInPM || '-'}</span>
+                                                {dayData.record?.locationInPM && (
+                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationInPM}</span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className='border-r border-gray-400'>
-                                            {dayData.record?.timeOutPM || '-'}
+                                            <div className='flex flex-col'>
+                                                <span>{dayData.record?.timeOutPM || '-'}</span>
+                                                {dayData.record?.locationOutPM && (
+                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationOutPM}</span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className='border-r border-gray-400 font-medium'>
                                             {dayData.totalHours}
