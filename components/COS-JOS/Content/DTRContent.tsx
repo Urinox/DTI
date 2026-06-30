@@ -19,6 +19,7 @@ interface DTRRecord {
     locationOutAM?: string
     locationInPM?: string
     locationOutPM?: string
+    leaveDetails?: any[]
 }
 
 interface LeaveRequest {
@@ -27,6 +28,8 @@ interface LeaveRequest {
     endDate: string
     type: string
     status: string
+    purpose: string
+    destination: string
 }
 
 interface OvertimeRequest {
@@ -35,6 +38,8 @@ interface OvertimeRequest {
     endDate: string
     hours: string
     status: string
+    purpose: string
+    destination: string
 }
 
 interface TravelOrderRequest {
@@ -44,6 +49,7 @@ interface TravelOrderRequest {
     purpose: string
     destination: string
     status: string
+    expectedOutput: string
 }
 
 export default function DTRContent({username, userId}: {username: string, userId?: string}) {
@@ -82,6 +88,7 @@ export default function DTRContent({username, userId}: {username: string, userId
     const [hasTodayRecord, setHasTodayRecord] = useState(false)
     const inputRef = useRef<HTMLInputElement>(null)
     const [isGettingLocation, setIsGettingLocation] = useState(false)
+    const isLoadingRef = useRef(false)
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -159,22 +166,141 @@ export default function DTRContent({username, userId}: {username: string, userId
         })
     }
 
-    // ✅ Load both leave requests, overtime requests, travel order requests, and DTR records sequentially
-    async function loadData(month: string) {
+async function loadData(month: string) {
+    // Prevent concurrent execution
+    if (isLoadingRef.current) {
+        console.log('loadData already in progress, skipping...')
+        return
+    }
+    
+    isLoadingRef.current = true
+    
+    try {
         const approvedLeaves = await fetchLeaveRequests()
         const approvedOvertimes = await fetchOvertimeRequests()
         const approvedTravelOrders = await fetchTravelOrderRequests()
+        
+        // ✅ Create DTR records for ALL approved requests (including future months)
+        await createDTRRecordsForRequests(approvedLeaves, approvedOvertimes, approvedTravelOrders)
+        
+        // Then fetch records for the selected month
         await fetchDTRRecords(month, approvedLeaves, approvedOvertimes, approvedTravelOrders)
+    } finally {
+        isLoadingRef.current = false
     }
+}
 
+// ✅ Create DTR records for ALL approved requests (past, present, and future) - No month filtering
+async function createDTRRecordsForRequests(leaves: LeaveRequest[], overtimes: OvertimeRequest[], travelOrders: TravelOrderRequest[]) {
+    if (!session?.user?.id) return
+    
+    try {
+        // Fetch ALL existing DTR records (no month filtering)
+        const response = await axios.get(`/api/dtr/${session.user.id}`)
+        const existingRecords = response.data.data || []
+        
+        // Create a Set of dates that already have records
+        const existingDates = new Set(existingRecords.map((record: any) => record.date))
+        
+        const datesToCreate = new Set<string>()
+        
+        // Helper function to get local date string
+        const getLocalDateStr = (date: Date): string => {
+            const year = date.getFullYear()
+            const month = String(date.getMonth() + 1).padStart(2, '0')
+            const day = String(date.getDate()).padStart(2, '0')
+            return `${year}-${month}-${day}`
+        }
+        
+        // Process ALL leaves - create for ALL dates in range (including future)
+        leaves.forEach(leave => {
+            const start = new Date(leave.startDate)
+            const end = new Date(leave.endDate)
+            
+            // IMPORTANT: Reset time to midnight for proper date comparison
+            const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+            const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+            
+            let current = new Date(startDate)
+            
+            // Compare dates without time (using getDate, getMonth, getFullYear)
+            while (current.getTime() <= endDate.getTime()) {
+                const dateStr = getLocalDateStr(current)
+                if (!existingDates.has(dateStr)) {
+                    datesToCreate.add(dateStr)
+                }
+                current.setDate(current.getDate() + 1)
+            }
+        })
+        
+        // Process ALL overtimes - create for ALL dates in range (including future)
+        overtimes.forEach(overtime => {
+            const start = new Date(overtime.startDate)
+            const end = new Date(overtime.endDate)
+            
+            const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+            const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+            
+            let current = new Date(startDate)
+            
+            while (current.getTime() <= endDate.getTime()) {
+                const dateStr = getLocalDateStr(current)
+                if (!existingDates.has(dateStr)) {
+                    datesToCreate.add(dateStr)
+                }
+                current.setDate(current.getDate() + 1)
+            }
+        })
+        
+        // Process ALL travel orders - create for ALL dates in range (including future)
+        travelOrders.forEach(travelOrder => {
+            const start = new Date(travelOrder.startDate)
+            const end = new Date(travelOrder.endDate)
+            
+            const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+            const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+            
+            let current = new Date(startDate)
+            
+            while (current.getTime() <= endDate.getTime()) {
+                const dateStr = getLocalDateStr(current)
+                if (!existingDates.has(dateStr)) {
+                    datesToCreate.add(dateStr)
+                }
+                current.setDate(current.getDate() + 1)
+            }
+        })
+        
+        // Create records for ALL dates that don't exist (including future)
+        if (datesToCreate.size > 0) {
+            console.log(`📝 Creating ${datesToCreate.size} DTR records for dates:`, Array.from(datesToCreate))
+        }
+        
+        for (const date of datesToCreate) {
+            try {
+                const payload = {
+                    date: date,
+                    session: 'morning',
+                    status: 'Leave'
+                }
+                
+                await axios.post(`/api/dtr/${session.user.id}`, payload)
+                console.log(`✅ Created DTR record for ${date}`)
+            } catch (error) {
+                console.error(`Failed to create DTR record for ${date}:`, error)
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error creating DTR records for requests:', error)
+    }
+}
     // ✅ Session detection
     const getCurrentSession = () => {
         const hour = currentTime.getHours()
         const minutes = currentTime.getMinutes()
         
-        // Morning session: 6:00 AM to 1:00 PM
         if ((hour >= 6 && hour < 13) || (hour === 13 && minutes === 0)) return 'morning'
-        // Afternoon session: 1:00 PM to 7:00 PM
         else if ((hour >= 13 && hour < 19) || (hour === 19 && minutes === 0)) return 'afternoon'
         return null
     }
@@ -182,7 +308,6 @@ export default function DTRContent({username, userId}: {username: string, userId
     const isTimeAllowed = () => {
         const hour = currentTime.getHours()
         const minutes = currentTime.getMinutes()
-        // 6:00 AM to 7:00 PM
         if ((hour >= 6 && hour < 19) || (hour === 19 && minutes === 0)) return true
         return false
     }
@@ -261,7 +386,7 @@ export default function DTRContent({username, userId}: {username: string, userId
         return { sickLeave, vacationLeave, personalCalamity }
     }
 
-    // ✅ Fetch ALL approved pass slips
+    // ✅ Fetch ALL approved pass slips with purpose and destination
     async function fetchLeaveRequests() {
         if (!session?.user?.id) return []
         
@@ -271,7 +396,15 @@ export default function DTRContent({username, userId}: {username: string, userId
             
             const approvedLeaves = records.filter((record: any) => {
                 return record.status === 'Approved'
-            })
+            }).map((record: any) => ({
+                id: record.id,
+                startDate: record.startDate,
+                endDate: record.endDate,
+                type: record.type,
+                status: record.status,
+                purpose: record.purpose || '',
+                destination: record.destination || ''
+            }))
             
             setLeaveRequests(approvedLeaves)
             return approvedLeaves
@@ -284,7 +417,7 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }
 
-    // ✅ Fetch ALL approved overtime requests
+    // ✅ Fetch ALL approved overtime requests with purpose and destination
     async function fetchOvertimeRequests() {
         if (!session?.user?.id) return []
         
@@ -294,7 +427,15 @@ export default function DTRContent({username, userId}: {username: string, userId
             
             const approvedOvertimes = records.filter((record: any) => {
                 return record.status === 'Approved'
-            })
+            }).map((record: any) => ({
+                id: record.id,
+                startDate: record.startDate,
+                endDate: record.endDate,
+                hours: record.hours || '0',
+                status: record.status,
+                purpose: record.purpose || '',
+                destination: record.destination || ''
+            }))
             
             setOvertimeRequests(approvedOvertimes)
             return approvedOvertimes
@@ -307,7 +448,7 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }
 
-    // ✅ Fetch ALL approved travel order requests
+    // ✅ Fetch ALL approved travel order requests with purpose and destination
     async function fetchTravelOrderRequests() {
         if (!session?.user?.id) return []
         
@@ -317,7 +458,15 @@ export default function DTRContent({username, userId}: {username: string, userId
             
             const approvedTravelOrders = records.filter((record: any) => {
                 return record.status === 'Approved'
-            })
+            }).map((record: any) => ({
+                id: record.id,
+                startDate: record.startDate,
+                endDate: record.endDate,
+                purpose: record.purpose || '',
+                destination: record.destination || '',
+                status: record.status,
+                expectedOutput: record.expectedOutput || ''
+            }))
             
             setTravelOrderRequests(approvedTravelOrders)
             return approvedTravelOrders
@@ -330,55 +479,66 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }
 
-    // ✅ Calculate statistics from DTR records with leave data
-    function calculateRealStats(records: DTRRecord[]) {
-        let tardiness = 0
-        let undertime = 0
-        let overtime = 0
-        let sickLeave = 0
-        let vacationLeave = 0
-        let personalCalamity = 0
+function calculateRealStats(records: DTRRecord[]) {
+    let tardiness = 0
+    let undertime = 0
+    let overtime = 0
+    let sickLeave = 0
+    let vacationLeave = 0
+    let personalCalamity = 0
 
-        records.forEach(record => {
-            // Check for leave statuses from the leaveStatus field
-            if (record.leaveStatus === 'Sick Leave') {
-                sickLeave++
-            } else if (record.leaveStatus === 'Vacation Leave') {
-                vacationLeave++
-            } else if (record.leaveStatus === 'Personal Calamity') {
-                personalCalamity++
-            }
+    // Deduplicate records by date - keep the one with time data if it exists
+    const uniqueRecords = new Map<string, DTRRecord>()
+    
+    records.forEach(record => {
+        const existing = uniqueRecords.get(record.date)
+        
+        // If no existing record, or current record has time data and existing doesn't
+        if (!existing || 
+            (record.timeInAM && !existing.timeInAM) ||
+            (record.timeOutAM && !existing.timeOutAM) ||
+            (record.timeInPM && !existing.timeInPM) ||
+            (record.timeOutPM && !existing.timeOutPM)) {
+            uniqueRecords.set(record.date, record)
+        }
+    })
+    
+    const dedupedRecords = Array.from(uniqueRecords.values())
+
+    dedupedRecords.forEach(record => {
+        if (record.leaveStatus === 'Sick Leave') {
+            sickLeave++
+        } else if (record.leaveStatus === 'Vacation Leave') {
+            vacationLeave++
+        } else if (record.leaveStatus === 'Personal Calamity') {
+            personalCalamity++
+        }
+        
+        const totalHours = record.totalHours
+        if (totalHours && totalHours !== '-') {
+            const [hours, minutes] = totalHours.split(':').map(Number)
+            const totalMinutes = (hours || 0) * 60 + (minutes || 0)
             
-            // ✅ ALWAYS calculate tardiness, undertime, and overtime regardless of leave status
-            const totalHours = record.totalHours
-            if (totalHours && totalHours !== '-') {
-                const [hours, minutes] = totalHours.split(':').map(Number)
-                const totalMinutes = (hours || 0) * 60 + (minutes || 0)
-                
-                // Standard work hours: 8 hours (480 minutes)
-                if (totalMinutes > 0) {
-                    if (totalMinutes < 480) {
-                        undertime++
-                    } else if (totalMinutes > 480) {
-                        overtime++
-                    }
+            if (totalMinutes > 0) {
+                if (totalMinutes < 480) {
+                    undertime++
+                } else if (totalMinutes > 480) {
+                    overtime++
                 }
             }
-            
-            // ✅ Auto-calculate tardiness (time-in > 7:15 AM for morning)
-            // 7:15 AM = 435 minutes
-            if (record.timeInAM) {
-                const [inHours, inMinutes] = record.timeInAM.split(':').map(Number)
-                const timeInMinutes = inHours * 60 + inMinutes
-                if (timeInMinutes > 435) {
-                    tardiness++
-                }
+        }
+        
+        if (record.timeInAM) {
+            const [inHours, inMinutes] = record.timeInAM.split(':').map(Number)
+            const timeInMinutes = inHours * 60 + inMinutes
+            if (timeInMinutes > 435) {
+                tardiness++
             }
-        })
+        }
+    })
 
-        return { tardiness, undertime, overtime, sickLeave, vacationLeave, personalCalamity }
-    }
-
+    return { tardiness, undertime, overtime, sickLeave, vacationLeave, personalCalamity }
+}
     // ✅ Count approved overtime requests for the selected month
     function countOvertimeRequests(overtimes: OvertimeRequest[], month: string) {
         let count = 0
@@ -411,24 +571,122 @@ export default function DTRContent({username, userId}: {username: string, userId
         return count
     }
 
-    // ✅ Check if a date has an approved pass slip and map to DTR status
-    function getLeaveStatusForDate(dateStr: string, leaves: LeaveRequest[]): string | null {
-        const date = new Date(dateStr)
-        const dateString = date.toISOString().split('T')[0]
+// ✅ Check if a date has an approved pass slip and map to DTR status
+function getLeaveStatusForDate(dateStr: string, leaves: LeaveRequest[]): string | null {
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const dateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    
+    for (const leave of leaves) {
+        const start = new Date(leave.startDate)
+        const end = new Date(leave.endDate)
         
-        for (const leave of leaves) {
-            const startDate = new Date(leave.startDate).toISOString().split('T')[0]
-            const endDate = new Date(leave.endDate).toISOString().split('T')[0]
-            
-            if (dateString >= startDate && dateString <= endDate) {
-                const status = mapPassSlipTypeToStatus(leave.type)
-                if (status) {
-                    return status
-                }
+        const startYear = start.getFullYear()
+        const startMonth = String(start.getMonth() + 1).padStart(2, '0')
+        const startDay = String(start.getDate()).padStart(2, '0')
+        const startDateStr = `${startYear}-${startMonth}-${startDay}`
+        
+        const endYear = end.getFullYear()
+        const endMonth = String(end.getMonth() + 1).padStart(2, '0')
+        const endDay = String(end.getDate()).padStart(2, '0')
+        const endDateStr = `${endYear}-${endMonth}-${endDay}`
+        
+        if (dateString >= startDateStr && dateString <= endDateStr) {
+            const status = mapPassSlipTypeToStatus(leave.type)
+            if (status) {
+                return status
             }
         }
-        return null
     }
+    return null
+}
+
+// ✅ Get leave details for a date - returns array of all details
+function getLeaveDetailsForDate(dateStr: string, leaves: LeaveRequest[], overtimes: OvertimeRequest[], travelOrders: TravelOrderRequest[]): any[] {
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const dateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    
+    const details: any[] = []
+    
+    // Check pass slips
+    for (const leave of leaves) {
+        const start = new Date(leave.startDate)
+        const end = new Date(leave.endDate)
+        
+        const startYear = start.getFullYear()
+        const startMonth = String(start.getMonth() + 1).padStart(2, '0')
+        const startDay = String(start.getDate()).padStart(2, '0')
+        const startDateStr = `${startYear}-${startMonth}-${startDay}`
+        
+        const endYear = end.getFullYear()
+        const endMonth = String(end.getMonth() + 1).padStart(2, '0')
+        const endDay = String(end.getDate()).padStart(2, '0')
+        const endDateStr = `${endYear}-${endMonth}-${endDay}`
+        
+        if (dateString >= startDateStr && dateString <= endDateStr) {
+            details.push({
+                type: leave.type,
+                purpose: leave.purpose || '',
+                startTime: new Date(leave.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                endTime: new Date(leave.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                destination: leave.destination || ''
+            })
+        }
+    }
+    
+    // Check overtime requests
+    for (const overtime of overtimes) {
+        const start = new Date(overtime.startDate)
+        const end = new Date(overtime.endDate)
+        
+        const startYear = start.getFullYear()
+        const startMonth = String(start.getMonth() + 1).padStart(2, '0')
+        const startDay = String(start.getDate()).padStart(2, '0')
+        const startDateStr = `${startYear}-${startMonth}-${startDay}`
+        
+        const endYear = end.getFullYear()
+        const endMonth = String(end.getMonth() + 1).padStart(2, '0')
+        const endDay = String(end.getDate()).padStart(2, '0')
+        const endDateStr = `${endYear}-${endMonth}-${endDay}`
+        
+        if (dateString >= startDateStr && dateString <= endDateStr) {
+            details.push({
+                type: 'Overtime',
+                purpose: overtime.purpose || '',
+                startTime: new Date(overtime.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                endTime: new Date(overtime.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                destination: overtime.destination || ''
+            })
+        }
+    }
+    
+    // Check travel orders
+    for (const travelOrder of travelOrders) {
+        const start = new Date(travelOrder.startDate)
+        const end = new Date(travelOrder.endDate)
+        
+        const startYear = start.getFullYear()
+        const startMonth = String(start.getMonth() + 1).padStart(2, '0')
+        const startDay = String(start.getDate()).padStart(2, '0')
+        const startDateStr = `${startYear}-${startMonth}-${startDay}`
+        
+        const endYear = end.getFullYear()
+        const endMonth = String(end.getMonth() + 1).padStart(2, '0')
+        const endDay = String(end.getDate()).padStart(2, '0')
+        const endDateStr = `${endYear}-${endMonth}-${endDay}`
+        
+        if (dateString >= startDateStr && dateString <= endDateStr) {
+            details.push({
+                type: 'Travel Order',
+                purpose: travelOrder.purpose || '',
+                startTime: new Date(travelOrder.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                endTime: new Date(travelOrder.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                destination: travelOrder.destination || ''
+            })
+        }
+    }
+    
+    return details
+}
 
     async function checkTodayRecord() {
         try {
@@ -481,94 +739,127 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }
 
-    async function fetchDTRRecords(month: string, leaves: LeaveRequest[] = [], overtimes: OvertimeRequest[] = [], travelOrders: TravelOrderRequest[] = []) {
-        if (!session?.user?.id) return
+async function fetchDTRRecords(month: string, leaves: LeaveRequest[] = [], overtimes: OvertimeRequest[] = [], travelOrders: TravelOrderRequest[] = []) {
+    if (!session?.user?.id) return
+    
+    try {
+        const response = await axios.get(`/api/dtr/${session.user.id}`)
+        const records = response.data.data || []
         
-        try {
-            const response = await axios.get(`/api/dtr/${session.user.id}`)
-            const records = response.data.data || []
+        const filtered = records.filter((record: any) => 
+            record.date?.startsWith(month)
+        )
+        
+        const formattedRecords: DTRRecord[] = filtered.map((record: any) => {
+            const leaveStatus = getLeaveStatusForDate(record.date, leaves)
+            const leaveDetails = getLeaveDetailsForDate(record.date, leaves, overtimes, travelOrders)
             
-            const filtered = records.filter((record: any) => 
-                record.date?.startsWith(month)
-            )
+            const formatted = {
+                id: record.id || '',
+                date: record.date || '',
+                timeInAM: record.timeInAM || '',
+                timeOutAM: record.timeOutAM || '',
+                timeInPM: record.timeInPM || '',
+                timeOutPM: record.timeOutPM || '',
+                totalHours: calculateDayTotal(
+                    record.timeInAM, 
+                    record.timeOutAM, 
+                    record.timeInPM, 
+                    record.timeOutPM
+                ),
+                status: record.status || 'Present',
+                leaveStatus: leaveStatus || undefined,
+                locationInAM: record.locationInAM || '',
+                locationOutAM: record.locationOutAM || '',
+                locationInPM: record.locationInPM || '',
+                locationOutPM: record.locationOutPM || '',
+                leaveDetails: leaveDetails.length > 0 ? leaveDetails : undefined
+            }
             
-            const formattedRecords: DTRRecord[] = filtered.map((record: any) => {
-                const leaveStatus = getLeaveStatusForDate(record.date, leaves)
-                
-                const formatted = {
-                    id: record.id || '',
-                    date: record.date || '',
-                    timeInAM: record.timeInAM || '',
-                    timeOutAM: record.timeOutAM || '',
-                    timeInPM: record.timeInPM || '',
-                    timeOutPM: record.timeOutPM || '',
-                    totalHours: calculateDayTotal(
-                        record.timeInAM, 
-                        record.timeOutAM, 
-                        record.timeInPM, 
-                        record.timeOutPM
-                    ),
-                    status: record.status || 'Present',
-                    leaveStatus: leaveStatus || undefined,
-                    locationInAM: record.locationInAM || '',
-                    locationOutAM: record.locationOutAM || '',
-                    locationInPM: record.locationInPM || '',
-                    locationOutPM: record.locationOutPM || ''
+            return formatted
+        })
+        
+        setDtrRecords(formattedRecords)
+        
+        // ✅ Calculate stats - count UNIQUE approved requests, not each day
+        let tardiness = 0
+        let undertime = 0
+        let overtime = 0
+        let sickLeave = 0
+        let vacationLeave = 0
+        let personalCalamity = 0
+        
+        // Count unique leaves from the leave requests array
+        leaves.forEach(leave => {
+            // Check if this leave's date range falls within the selected month
+            const startDate = new Date(leave.startDate)
+            const endDate = new Date(leave.endDate)
+            const monthStart = new Date(month + '-01')
+            const monthEnd = new Date(month + '-31')
+            
+            // If the leave overlaps with the selected month
+            if (startDate <= monthEnd && endDate >= monthStart) {
+                if (leave.type === 'Emergency') {
+                    sickLeave++
+                } else if (leave.type === 'Official') {
+                    vacationLeave++
+                } else if (leave.type === 'Personal') {
+                    personalCalamity++
+                }
+            }
+        })
+        
+        // Count DTR records with actual time data (not leave status)
+        formattedRecords.forEach(record => {
+            // Only count tardiness/undertime/overtime from records with actual time data
+            if (record.timeInAM || record.timeOutAM || record.timeInPM || record.timeOutPM) {
+                const totalHours = record.totalHours
+                if (totalHours && totalHours !== '-') {
+                    const [hours, minutes] = totalHours.split(':').map(Number)
+                    const totalMinutes = (hours || 0) * 60 + (minutes || 0)
+                    
+                    if (totalMinutes > 0) {
+                        if (totalMinutes < 480) {
+                            undertime++
+                        } else if (totalMinutes > 480) {
+                            overtime++
+                        }
+                    }
                 }
                 
-                return formatted
-            })
-            
-            setDtrRecords(formattedRecords)
-            
-            // ✅ Calculate stats from DTR records
-            const dtrStats = calculateRealStats(formattedRecords)
-            
-            // ✅ Count leaves from requests (including those without DTR records)
-            const leaveCounts = countLeavesFromRequests(leaves, month)
-            
-            // Count how many leaves were already counted from DTR records
-            let dtrSickLeave = 0
-            let dtrVacationLeave = 0
-            let dtrPersonalCalamity = 0
-            
-            formattedRecords.forEach((record: DTRRecord) => {
-                if (record.leaveStatus === 'Sick Leave') dtrSickLeave++
-                else if (record.leaveStatus === 'Vacation Leave') dtrVacationLeave++
-                else if (record.leaveStatus === 'Personal Calamity') dtrPersonalCalamity++
-            })
-            
-            // Add only the leaves that weren't already counted in DTR
-            const additionalSickLeave = Math.max(0, leaveCounts.sickLeave - dtrSickLeave)
-            const additionalVacationLeave = Math.max(0, leaveCounts.vacationLeave - dtrVacationLeave)
-            const additionalPersonalCalamity = Math.max(0, leaveCounts.personalCalamity - dtrPersonalCalamity)
-            
-            // ✅ Count approved overtime requests for the month and combine with DTR overtime
-            const approvedOvertimeCount = countOvertimeRequests(overtimes, month)
-            
-            // ✅ Count approved travel order requests for the month
-            const approvedTravelOrderCount = countTravelOrderRequests(travelOrders, month)
-            
-            const finalStats = {
-                tardiness: dtrStats.tardiness.toString(),
-                undertime: dtrStats.undertime.toString(),
-                overtime: (dtrStats.overtime + approvedOvertimeCount).toString(),
-                sickLeave: (dtrStats.sickLeave + additionalSickLeave).toString(),
-                vacationLeave: (dtrStats.vacationLeave + additionalVacationLeave).toString(),
-                personalCalamity: (dtrStats.personalCalamity + additionalPersonalCalamity).toString(),
-                travelOrder: approvedTravelOrderCount.toString()
+                if (record.timeInAM) {
+                    const [inHours, inMinutes] = record.timeInAM.split(':').map(Number)
+                    const timeInMinutes = inHours * 60 + inMinutes
+                    if (timeInMinutes > 435) {
+                        tardiness++
+                    }
+                }
             }
-            
-            setStats(finalStats)
-            
-        } catch (error: any) {
-            if (error.response?.status !== 404) {
-                console.error('Error fetching DTR records:', error)
-            }
-            setDtrRecords([])
+        })
+        
+        // Count overtime and travel orders from their respective requests
+        const approvedOvertimeCount = countOvertimeRequests(overtimes, month)
+        const approvedTravelOrderCount = countTravelOrderRequests(travelOrders, month)
+        
+        const finalStats = {
+            tardiness: tardiness.toString(),
+            undertime: undertime.toString(),
+            overtime: (overtime + approvedOvertimeCount).toString(),
+            sickLeave: sickLeave.toString(),
+            vacationLeave: vacationLeave.toString(),
+            personalCalamity: personalCalamity.toString(),
+            travelOrder: approvedTravelOrderCount.toString()
         }
+        
+        setStats(finalStats)
+        
+    } catch (error: any) {
+        if (error.response?.status !== 404) {
+            console.error('Error fetching DTR records:', error)
+        }
+        setDtrRecords([])
     }
-
+}
     // ✅ Handle status update
     async function handleStatusUpdate(recordId: string, date: string, newStatus: string) {
         if (!session?.user?.id) return
@@ -612,7 +903,6 @@ export default function DTRContent({username, userId}: {username: string, userId
 
     // ✅ Handle blur to cancel edit
     function handleBlur() {
-        // Only cancel if we're not in the middle of a save
         if (editingRecord) {
             setEditingRecord(null)
             setEditingStatus('')
@@ -623,37 +913,41 @@ export default function DTRContent({username, userId}: {username: string, userId
         return new Date(year, month + 1, 0).getDate()
     }
 
-    function generateMonthDays(month: string) {
-        const [year, monthNum] = month.split('-').map(Number)
-        const daysInMonth = getDaysInMonth(year, monthNum - 1)
-        const days = []
+function generateMonthDays(month: string) {
+    const [year, monthNum] = month.split('-').map(Number)
+    const daysInMonth = getDaysInMonth(year, monthNum - 1)
+    const days = []
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        const date = new Date(year, monthNum - 1, day)
         
-        for (let day = 1; day <= daysInMonth; day++) {
-            const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-            const date = new Date(year, monthNum - 1, day)
-            
-            const record = dtrRecords.find(r => r.date === dateStr)
-            
-            let totalHours = '-'
-            let status = 'Absent'
-            if (record) {
-                totalHours = record.totalHours || '-'
-                status = record.status || 'Present'
-            }
-            
-            days.push({
-                date: dateStr,
-                day: day,
-                record: record || null,
-                totalHours: totalHours,
-                status: status,
-                isToday: dateStr === new Date().toISOString().split('T')[0],
-                isFuture: date > new Date(),
-                isWeekend: date.getDay() === 0 || date.getDay() === 6
-            })
+        const record = dtrRecords.find(r => r.date === dateStr)
+        
+        let totalHours = '-'
+        let status = 'Absent'
+        let leaveDetails = null
+        
+        if (record) {
+            totalHours = record.totalHours || '-'
+            status = record.status || 'Present'
+            leaveDetails = record.leaveDetails || null
         }
-        return days
+        
+        days.push({
+            date: dateStr,
+            day: day,
+            record: record || null,
+            totalHours: totalHours,
+            status: status,
+            leaveDetails: leaveDetails,
+            isToday: dateStr === new Date().toISOString().split('T')[0],
+            isFuture: date > new Date(),
+            isWeekend: date.getDay() === 0 || date.getDay() === 6
+        })
     }
+    return days
+}
 
     const monthDays = generateMonthDays(selectedMonth)
 
@@ -696,7 +990,6 @@ export default function DTRContent({username, userId}: {username: string, userId
             const timeString = now.toTimeString().split(' ')[0]
             const dateString = now.toISOString().split('T')[0]
             
-            // ✅ Try to get location, but continue regardless
             let location = ''
             try {
                 location = await getCurrentLocation()
@@ -785,7 +1078,6 @@ export default function DTRContent({username, userId}: {username: string, userId
             const timeString = now.toTimeString().split(' ')[0]
             const dateString = now.toISOString().split('T')[0]
             
-            // ✅ Try to get location, but continue regardless
             let location = ''
             try {
                 location = await getCurrentLocation()
@@ -1070,17 +1362,43 @@ export default function DTRContent({username, userId}: {username: string, userId
                                                             placeholder="Enter status..."
                                                         />
                                                     ) : (
-                                                        <span 
-                                                            onDoubleClick={() => {
-                                                                if (!dayData.isFuture && dayData.record) {
-                                                                    handleDoubleClick(dayData.date, dayData.status)
-                                                                }
-                                                            }}
-                                                            className={`${!dayData.isFuture && dayData.record ? 'cursor-pointer hover:text-blue-600 hover:underline' : 'cursor-default'}`}
-                                                            title={!dayData.isFuture && dayData.record ? 'Double-click to edit' : ''}
-                                                        >
-                                                            {dayData.status}
-                                                        </span>
+                                                        <>
+                                                            {dayData.leaveDetails && dayData.leaveDetails.length > 0 && (
+                                                                <div className='text-xs text-left text-gray-700 space-y-0.5'>
+                                                                    {dayData.leaveDetails.map((detail, index) => {
+                                                                        let displayType = ''
+                                                                        if (detail.type === 'Personal') displayType = 'Personal Calamity'
+                                                                        else if (detail.type === 'Emergency') displayType = 'Sick Leave'
+                                                                        else if (detail.type === 'Official') displayType = 'Vacation Leave'
+                                                                        else if (detail.type === 'Overtime') displayType = 'Overtime'
+                                                                        else if (detail.type === 'Travel Order') displayType = 'Travel Order'
+                                                                        else displayType = detail.type
+                                                                        
+                                                                        return (
+                                                                            <div key={index}>
+                                                                                {displayType}: {detail.purpose}
+                                                                                {(detail.type === 'Personal' || detail.type === 'Emergency' || detail.type === 'Official' || detail.type === 'Overtime') && (
+                                                                                    <span className='text-gray-500'> ({detail.startTime} - {detail.endTime})</span>
+                                                                                )}
+                                                                            </div>
+                                                                        )
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                            {(!dayData.leaveDetails || dayData.leaveDetails.length === 0) && (
+                                                                <span 
+                                                                    onDoubleClick={() => {
+                                                                        if (!dayData.isFuture && dayData.record) {
+                                                                            handleDoubleClick(dayData.date, dayData.status)
+                                                                        }
+                                                                    }}
+                                                                    className={`${!dayData.isFuture && dayData.record ? 'cursor-pointer hover:text-blue-600 hover:underline' : 'cursor-default'}`}
+                                                                    title={!dayData.isFuture && dayData.record ? 'Double-click to edit' : ''}
+                                                                >
+                                                                    {dayData.status}
+                                                                </span>
+                                                            )}
+                                                        </>
                                                     )
                                                 )
                                             )}

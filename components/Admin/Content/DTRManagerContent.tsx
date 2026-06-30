@@ -31,6 +31,37 @@ interface DTRRecord {
     locationOutAM: string
     locationInPM: string
     locationOutPM: string
+    leaveDetails?: any[]
+}
+
+interface PassSlip {
+    id: string
+    startDate: string
+    endDate: string
+    type: string
+    status: string
+    purpose: string
+    destination: string
+}
+
+interface OvertimeRequest {
+    id: string
+    startDate: string
+    endDate: string
+    hours: string
+    status: string
+    purpose: string
+    destination: string
+}
+
+interface TravelOrderRequest {
+    id: string
+    startDate: string
+    endDate: string
+    purpose: string
+    destination: string
+    status: string
+    expectedOutput: string
 }
 
 export default function DTRManagerContent() {
@@ -48,6 +79,9 @@ export default function DTRManagerContent() {
     const [message, setMessage] = useState('')
     const inputRef = useRef<HTMLInputElement>(null)
     const itemsPerPage = 10
+    const [passSlipsCache, setPassSlipsCache] = useState<Record<string, PassSlip[]>>({})
+    const [overtimeCache, setOvertimeCache] = useState<Record<string, OvertimeRequest[]>>({})
+    const [travelOrderCache, setTravelOrderCache] = useState<Record<string, TravelOrderRequest[]>>({})
 
     useEffect(() => {
         const now = new Date()
@@ -66,7 +100,6 @@ export default function DTRManagerContent() {
         filterRecords()
     }, [dtrRecords, selectedEmployee, searchTerm])
 
-    // Focus input when editing starts
     useEffect(() => {
         if (editingRecord && inputRef.current) {
             inputRef.current.focus()
@@ -99,6 +132,187 @@ export default function DTRManagerContent() {
         }
     }
 
+    async function fetchPassSlips(userId: string): Promise<PassSlip[]> {
+        if (passSlipsCache[userId]) {
+            return passSlipsCache[userId]
+        }
+        
+        try {
+            const response = await axios.get(`/api/pass_slip/${userId}`)
+            const records = response.data.data || []
+            
+            const approvedPassSlips = records
+                .filter((record: any) => record.status === 'Approved')
+                .map((record: any) => ({
+                    id: record.id,
+                    startDate: record.startDate,
+                    endDate: record.endDate,
+                    type: record.type,
+                    status: record.status,
+                    purpose: record.purpose || '',
+                    destination: record.destination || ''
+                }))
+            
+            passSlipsCache[userId] = approvedPassSlips
+            return approvedPassSlips
+        } catch (error: any) {
+            if (error.response?.status !== 404) {
+                console.error(`Error fetching pass slips for user ${userId}:`, error)
+            }
+            return []
+        }
+    }
+
+    async function fetchOvertimeRequests(userId: string): Promise<OvertimeRequest[]> {
+        if (overtimeCache[userId]) {
+            return overtimeCache[userId]
+        }
+        
+        try {
+            const response = await axios.get(`/api/overtime_request/${userId}`)
+            const records = response.data.data || []
+            
+            const approvedOvertimes = records
+                .filter((record: any) => record.status === 'Approved')
+                .map((record: any) => ({
+                    id: record.id,
+                    startDate: record.startDate,
+                    endDate: record.endDate,
+                    hours: record.hours || '0',
+                    status: record.status,
+                    purpose: record.purpose || '',
+                    destination: record.destination || ''
+                }))
+            
+            overtimeCache[userId] = approvedOvertimes
+            return approvedOvertimes
+        } catch (error: any) {
+            if (error.response?.status !== 404) {
+                console.error(`Error fetching overtime requests for user ${userId}:`, error)
+            }
+            return []
+        }
+    }
+
+    async function fetchTravelOrderRequests(userId: string): Promise<TravelOrderRequest[]> {
+        if (travelOrderCache[userId]) {
+            return travelOrderCache[userId]
+        }
+        
+        try {
+            const response = await axios.get(`/api/travel_order/${userId}`)
+            const records = response.data.data || []
+            
+            const approvedTravelOrders = records
+                .filter((record: any) => record.status === 'Approved')
+                .map((record: any) => ({
+                    id: record.id,
+                    startDate: record.startDate,
+                    endDate: record.endDate,
+                    purpose: record.purpose || '',
+                    destination: record.destination || '',
+                    status: record.status,
+                    expectedOutput: record.expectedOutput || ''
+                }))
+            
+            travelOrderCache[userId] = approvedTravelOrders
+            return approvedTravelOrders
+        } catch (error: any) {
+            if (error.response?.status !== 404) {
+                console.error(`Error fetching travel orders for user ${userId}:`, error)
+            }
+            return []
+        }
+    }
+
+    function mapPassSlipTypeToStatus(type: string): string | null {
+        switch(type) {
+            case 'Official':
+                return 'Vacation Leave'
+            case 'Personal':
+                return 'Personal Calamity'
+            case 'Emergency':
+                return 'Sick Leave'
+            default:
+                return null
+        }
+    }
+
+    function getLocalDateStr(date: Date): string {
+        const year = date.getFullYear()
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+    }
+
+    function getLeaveDetailsForDate(
+        dateStr: string, 
+        passSlips: PassSlip[], 
+        overtimes: OvertimeRequest[], 
+        travelOrders: TravelOrderRequest[]
+    ): any[] {
+        const details: any[] = []
+        
+        // Check pass slips
+        for (const passSlip of passSlips) {
+            const start = new Date(passSlip.startDate)
+            const end = new Date(passSlip.endDate)
+            
+            const startDateStr = getLocalDateStr(start)
+            const endDateStr = getLocalDateStr(end)
+            
+            if (dateStr >= startDateStr && dateStr <= endDateStr) {
+                details.push({
+                    type: passSlip.type,
+                    purpose: passSlip.purpose || '',
+                    startTime: start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    endTime: end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    destination: passSlip.destination || ''
+                })
+            }
+        }
+        
+        // Check overtime requests
+        for (const overtime of overtimes) {
+            const start = new Date(overtime.startDate)
+            const end = new Date(overtime.endDate)
+            
+            const startDateStr = getLocalDateStr(start)
+            const endDateStr = getLocalDateStr(end)
+            
+            if (dateStr >= startDateStr && dateStr <= endDateStr) {
+                details.push({
+                    type: 'Overtime',
+                    purpose: overtime.purpose || '',
+                    startTime: start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    endTime: end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    destination: overtime.destination || ''
+                })
+            }
+        }
+        
+        // Check travel orders
+        for (const travelOrder of travelOrders) {
+            const start = new Date(travelOrder.startDate)
+            const end = new Date(travelOrder.endDate)
+            
+            const startDateStr = getLocalDateStr(start)
+            const endDateStr = getLocalDateStr(end)
+            
+            if (dateStr >= startDateStr && dateStr <= endDateStr) {
+                details.push({
+                    type: 'Travel Order',
+                    purpose: travelOrder.purpose || '',
+                    startTime: start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    endTime: end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    destination: travelOrder.destination || ''
+                })
+            }
+        }
+        
+        return details
+    }
+
     async function fetchAllDTRRecords(month: string) {
         setLoading(true)
         const allRecords: DTRRecord[] = []
@@ -106,14 +320,75 @@ export default function DTRManagerContent() {
         try {
             for (const employee of employees) {
                 try {
-                    const response = await axios.get(`/api/dtr/${employee.id}`)
-                    const records = response.data.data || []
+                    const dtrResponse = await axios.get(`/api/dtr/${employee.id}`)
+                    const records = dtrResponse.data.data || []
+                    
+                    const passSlips = await fetchPassSlips(employee.id)
+                    const overtimes = await fetchOvertimeRequests(employee.id)
+                    const travelOrders = await fetchTravelOrderRequests(employee.id)
                     
                     const monthRecords = records.filter((record: any) => 
                         record.date?.startsWith(month)
                     )
                     
                     monthRecords.forEach((record: any) => {
+                        const leaveDetails = getLeaveDetailsForDate(record.date, passSlips, overtimes, travelOrders)
+                        let displayStatus = record.status || 'Present'
+                        
+                        if (leaveDetails.length > 0) {
+                            // Check for specific types in order of priority
+                            let foundStatus = false
+                            
+                            for (const detail of leaveDetails) {
+                                if (detail.type === 'Overtime') {
+                                    displayStatus = 'Overtime'
+                                    foundStatus = true
+                                    break
+                                } else if (detail.type === 'Travel Order') {
+                                    displayStatus = 'Travel Order'
+                                    foundStatus = true
+                                    break
+                                } else {
+                                    const mappedStatus = mapPassSlipTypeToStatus(detail.type)
+                                    if (mappedStatus) {
+                                        displayStatus = mappedStatus
+                                        foundStatus = true
+                                        break
+                                    }
+                                }
+                            }
+                            
+                            // If no specific type found but there are details, use the first one
+                            if (!foundStatus && leaveDetails.length > 0) {
+                                const firstType = leaveDetails[0]?.type
+                                const mappedStatus = mapPassSlipTypeToStatus(firstType)
+                                if (mappedStatus) {
+                                    displayStatus = mappedStatus
+                                } else if (firstType === 'Overtime') {
+                                    displayStatus = 'Overtime'
+                                } else if (firstType === 'Travel Order') {
+                                    displayStatus = 'Travel Order'
+                                }
+                            }
+                        }
+                        
+                        const date = new Date(record.date)
+                        const isWeekend = date.getDay() === 0 || date.getDay() === 6
+                        
+                        if (isWeekend && !record.timeInAM && !record.timeInPM && record.status !== 'Leave') {
+                            displayStatus = 'Weekend'
+                        }
+                        
+                        if (!record.timeInAM && !record.timeOutAM && !record.timeInPM && !record.timeOutPM && 
+                            displayStatus === 'Present' && !isWeekend) {
+                            displayStatus = 'Absent'
+                        }
+                        
+                        if ((record.timeInAM || record.timeOutAM || record.timeInPM || record.timeOutPM) && 
+                            displayStatus === 'Leave' && leaveDetails.length === 0) {
+                            displayStatus = 'Present'
+                        }
+                        
                         allRecords.push({
                             id: record.id || '',
                             employeeId: employee.employeeId,
@@ -124,11 +399,12 @@ export default function DTRManagerContent() {
                             timeInPM: record.timeInPM || '',
                             timeOutPM: record.timeOutPM || '',
                             totalHours: record.totalHours || '',
-                            status: record.status || 'Present',
+                            status: displayStatus,
                             locationInAM: record.locationInAM || '',
                             locationOutAM: record.locationOutAM || '',
                             locationInPM: record.locationInPM || '',
-                            locationOutPM: record.locationOutPM || ''
+                            locationOutPM: record.locationOutPM || '',
+                            leaveDetails: leaveDetails.length > 0 ? leaveDetails : []
                         })
                     })
                 } catch (error) {
@@ -176,13 +452,11 @@ export default function DTRManagerContent() {
         }
     }
 
-    // ✅ Handle double click to edit status
     function handleDoubleClick(record: DTRRecord) {
         setEditingRecord(record.id)
         setEditingStatus(record.status || '')
     }
 
-    // ✅ Handle Enter key to save status
     async function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>, record: DTRRecord) {
         if (e.key === 'Enter') {
             e.preventDefault()
@@ -193,14 +467,12 @@ export default function DTRManagerContent() {
         }
     }
 
-    // ✅ Handle blur to save status
     async function handleBlur(record: DTRRecord) {
         if (editingRecord) {
             await saveStatus(record)
         }
     }
 
-    // ✅ Save status to database
     async function saveStatus(record: DTRRecord) {
         if (!editingRecord) return
         
@@ -221,15 +493,12 @@ export default function DTRManagerContent() {
 
             if (response.status === 200) {
                 setMessage('✅ Status updated successfully')
-                // Update local state
                 const updatedRecords = dtrRecords.map(r => 
                     r.id === record.id ? { ...r, status: editingStatus } : r
                 )
                 setDtrRecords(updatedRecords)
                 setEditingRecord(null)
                 setEditingStatus('')
-                
-                // Clear message after 3 seconds
                 setTimeout(() => setMessage(''), 3000)
             }
         } catch (error: any) {
@@ -244,6 +513,29 @@ export default function DTRManagerContent() {
         const month = e.target.value
         setSelectedMonth(month)
         fetchAllDTRRecords(month)
+    }
+
+    function getStatusColor(status: string): string {
+        switch(status) {
+            case 'Present':
+                return 'text-green-600'
+            case 'Absent':
+                return 'text-red-600'
+            case 'Vacation Leave':
+                return 'text-blue-600'
+            case 'Sick Leave':
+                return 'text-blue-600'
+            case 'Personal Calamity':
+                return 'text-blue-600'
+            case 'Overtime':
+                return 'text-purple-600'
+            case 'Travel Order':
+                return 'text-orange-600'
+            case 'Weekend':
+                return 'text-gray-500'
+            default:
+                return 'text-gray-600'
+        }
     }
 
     if (loading) {
@@ -321,7 +613,7 @@ export default function DTRManagerContent() {
                                     <td className='pl-5 py-2 font-bold'>PM In</td>
                                     <td className='pl-5 py-2 font-bold'>PM Out</td>
                                     <td className='pl-5 py-2 font-bold'>Total Hours</td>
-                                    <td className='pl-5 py-2 font-bold w-48'>Status</td>
+                                    <td className='pl-5 py-2 font-bold w-40'>Status</td>
                                 </tr>
                             </thead>
                             <tbody>
@@ -383,7 +675,7 @@ export default function DTRManagerContent() {
                                                 ) : (
                                                     <span 
                                                         onDoubleClick={() => handleDoubleClick(record)}
-                                                        className="cursor-pointer hover:text-blue-600 hover:underline"
+                                                        className={`cursor-pointer hover:underline font-medium ${getStatusColor(record.status)}`}
                                                         title="Double-click to edit status"
                                                     >
                                                         {record.status || 'Click to add status'}

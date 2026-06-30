@@ -1,6 +1,6 @@
 // app/api/dtr/[userId]/route.ts
 import { NextRequest, NextResponse } from "next/server"
-import { database, ref, get, set, push, update } from '@/lib/firebase'
+import { database, ref, get, set, push, update, remove } from '@/lib/firebase'
 import { auth } from '@/auth'
 
 // GET - Fetch DTR records for a user
@@ -81,7 +81,7 @@ export async function POST(
             }, { status: 401 })
         }
 
-        const { date, session: sessionType, timeInAM, timeInPM, location, locationInAM, locationInPM } = await request.json()
+        const { date, session: sessionType, timeInAM, timeInPM, location, locationInAM, locationInPM, status } = await request.json()
         
         if (!date || !sessionType) {
             return NextResponse.json({ 
@@ -113,24 +113,64 @@ export async function POST(
             const updates: any = { updatedAt: new Date().toISOString() }
             
             if (sessionType === 'morning') {
-                updates.timeInAM = timeInAM
+                // Only update time if provided and not empty
+                if (timeInAM !== undefined && timeInAM !== null && timeInAM !== '') {
+                    updates.timeInAM = timeInAM
+                }
                 if (locationInAM || location) {
-                    updates.locationInAM = locationInAM || location
+                    updates.locationInAM = locationInAM || location || ''
                 }
             } else {
-                updates.timeInPM = timeInPM
-                if (locationInPM || location) {
-                    updates.locationInPM = locationInPM || location
+                if (timeInPM !== undefined && timeInPM !== null && timeInPM !== '') {
+                    updates.timeInPM = timeInPM
                 }
+                if (locationInPM || location) {
+                    updates.locationInPM = locationInPM || location || ''
+                }
+            }
+            
+            // Update status if provided
+            if (status !== undefined && status !== null) {
+                updates.status = status
             }
             
             await update(recordRef, updates)
             return NextResponse.json({ 
                 data: { id: existingRecordId },
-                message: `Time in recorded successfully (${sessionType})`,
+                message: `Record updated successfully (${sessionType})`,
                 status: 200 
             })
         } else {
+            // Double-check to prevent race condition
+            const dtrSnapshot2 = await get(dtrRef)
+            if (dtrSnapshot2.exists()) {
+                const records = dtrSnapshot2.val()
+                for (const [key, record] of Object.entries(records)) {
+                    if ((record as any).date === date) {
+                        // Another request created it, update instead
+                        const recordRef = ref(database, `dtr/${userId}/${key}`)
+                        const updates: any = { updatedAt: new Date().toISOString() }
+                        
+                        if (sessionType === 'morning' && timeInAM) {
+                            updates.timeInAM = timeInAM
+                            updates.locationInAM = locationInAM || location || ''
+                        } else if (sessionType !== 'morning' && timeInPM) {
+                            updates.timeInPM = timeInPM
+                            updates.locationInPM = locationInPM || location || ''
+                        }
+                        if (status) updates.status = status
+                        
+                        await update(recordRef, updates)
+                        return NextResponse.json({ 
+                            data: { id: key },
+                            message: `Record updated successfully (${sessionType})`,
+                            status: 200 
+                        })
+                    }
+                }
+            }
+            
+            // No record exists, create it
             const newRecordRef = push(ref(database, `dtr/${userId}`))
             const newRecord: any = {
                 date: date,
@@ -143,15 +183,16 @@ export async function POST(
                 locationInPM: '',
                 locationOutPM: '',
                 totalHours: '',
-                status: 'Present',
+                status: status || 'Present',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             }
             
-            if (sessionType === 'morning') {
+            // Only set time values if provided
+            if (sessionType === 'morning' && timeInAM !== undefined && timeInAM !== null && timeInAM !== '') {
                 newRecord.timeInAM = timeInAM
                 newRecord.locationInAM = locationInAM || location || ''
-            } else {
+            } else if (sessionType !== 'morning' && timeInPM !== undefined && timeInPM !== null && timeInPM !== '') {
                 newRecord.timeInPM = timeInPM
                 newRecord.locationInPM = locationInPM || location || ''
             }
@@ -159,7 +200,7 @@ export async function POST(
             await set(newRecordRef, newRecord)
             return NextResponse.json({ 
                 data: { id: newRecordRef.key },
-                message: `Time in recorded successfully (${sessionType})`,
+                message: status === 'Leave' ? 'Leave record created successfully' : `Time in recorded successfully (${sessionType})`,
                 status: 200 
             })
         }
@@ -241,9 +282,12 @@ export async function PUT(
             }
         }
         
-        // Calculate total hours if both AM and PM are complete
+        // Calculate total hours if both AM and PM are complete and have valid times
         const record = recordData as any
-        if (record.timeInAM && record.timeOutAM && record.timeInPM && record.timeOutPM) {
+        const hasAMComplete = record.timeInAM && record.timeInAM !== '' && record.timeOutAM && record.timeOutAM !== ''
+        const hasPMComplete = record.timeInPM && record.timeInPM !== '' && record.timeOutPM && record.timeOutPM !== ''
+        
+        if (hasAMComplete && hasPMComplete) {
             // Calculate total hours
             const amIn = record.timeInAM.split(':')
             const amOut = record.timeOutAM.split(':')
@@ -257,6 +301,9 @@ export async function PUT(
             const minutes = totalMinutes % 60
             updates.totalHours = `${hours}h ${minutes}m`
             updates.status = 'Complete'
+        } else if (record.status === 'Leave') {
+            // Keep status as Leave if it was set
+            // Don't change it
         }
 
         await update(recordRef, updates)
@@ -269,6 +316,65 @@ export async function PUT(
         
     } catch (error) {
         console.error("❌ Error updating DTR:", error)
+        return NextResponse.json({ 
+            data: null,
+            message: "Server error",
+            status: 500 
+        }, { status: 500 })
+    }
+}
+
+// DELETE - Remove a DTR record
+export async function DELETE(
+    request: NextRequest,
+    { params }: { params: Promise<{ userId: string }> }
+) {
+    try {
+        const { userId } = await params
+        
+        const session = await auth()
+        if (!session?.user?.id) {
+            return NextResponse.json({ 
+                data: null, 
+                message: "Unauthorized",
+                status: 401 
+            }, { status: 401 })
+        }
+
+        const url = new URL(request.url)
+        const recordId = url.searchParams.get('recordId')
+        
+        if (!recordId) {
+            return NextResponse.json({ 
+                data: null,
+                message: "Record ID required",
+                status: 400 
+            }, { status: 400 })
+        }
+
+        // Verify the record exists and belongs to the user
+        const recordRef = ref(database, `dtr/${userId}/${recordId}`)
+        const recordSnapshot = await get(recordRef)
+        
+        if (!recordSnapshot.exists()) {
+            return NextResponse.json({ 
+                data: null,
+                message: "Record not found",
+                status: 404 
+            }, { status: 404 })
+        }
+
+        // Delete the record
+        await remove(recordRef)
+        
+        return NextResponse.json({ 
+            data: null,
+            message: "Record deleted successfully",
+            status: 200 
+        })
+        
+    } catch (error) {
+        console.error("❌ Error deleting DTR:", error)
         return NextResponse.json({ 
             data: null,
             message: "Server error",
