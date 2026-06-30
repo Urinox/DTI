@@ -883,14 +883,10 @@ export default function DTRContent({username, userId}: {username: string, userId
                         <span className={`text-sm font-semibold ${isMorningSession ? 'text-green-600' : 'text-gray-400'}`}>
                             Morning
                             {isTimeInAM && !isTimeOutAM ? ' ' : isTimeOutAM ? ' ' : ''}
-                            {locationInAM && <span className='text-xs text-gray-500 ml-1'>{locationInAM}</span>}
-                            {locationOutAM && <span className='text-xs text-gray-500 ml-1'>{locationOutAM}</span>}
                         </span>
                         <span className={`text-sm font-semibold ${isAfternoonSession ? 'text-orange-600' : 'text-gray-400'}`}>
                             Afternoon
                             {isTimeInPM && !isTimeOutPM ? ' ' : isTimeOutPM ? ' ' : ''}
-                            {locationInPM && <span className='text-xs text-gray-500 ml-1'>{locationInPM}</span>}
-                            {locationOutPM && <span className='text-xs text-gray-500 ml-1'>{locationOutPM}</span>}
                         </span>
                     </div>
 
