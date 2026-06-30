@@ -14,6 +14,7 @@ interface Employee {
     designation: string
     division: string
     office: string
+    role?: string  // ✅ Add role field
 }
 
 interface DTRRecord {
@@ -51,6 +52,7 @@ interface OvertimeRequest {
     hours: string
     status: string
     purpose: string
+    // ✅ destination removed
 }
 
 interface TravelOrderRequest {
@@ -139,18 +141,23 @@ export default function DTRManagerContent() {
             const response = await axios.get('/api/admin/employees')
             const data = response.data.data || []
             
-            const formattedEmployees = data.map((user: any, index: number) => ({
-                id: user.id || '',
-                employeeId: (index + 1).toString().padStart(5, '0'),
-                username: user.username || '',
-                name: user.profile?.name || user.username || 'Unknown',
-                email: user.email || '',
-                designation: user.profile?.designation || 'N/A',
-                division: user.profile?.division || '',
-                office: user.profile?.office || ''
-            }))
+            const formattedEmployees = data
+                // ✅ FILTER: Only include COS-JO users
+                .filter((user: any) => user.role === 'cos' || user.role === 'COS-JO')
+                .map((user: any, index: number) => ({
+                    id: user.id || '',
+                    employeeId: (index + 1).toString().padStart(5, '0'),
+                    username: user.username || '',
+                    name: user.profile?.name || user.username || 'Unknown',
+                    email: user.email || '',
+                    designation: user.profile?.designation || 'N/A',
+                    division: user.profile?.division || '',
+                    office: user.profile?.office || '',
+                    role: user.role || 'cos'
+                }))
             
             setEmployees(formattedEmployees)
+            console.log(`✅ Loaded ${formattedEmployees.length} COS-JO employees`)
         } catch (error) {
             console.error('Error fetching employees:', error)
             setEmployees([])
@@ -205,8 +212,8 @@ export default function DTRManagerContent() {
                     endDate: record.endDate,
                     hours: record.hours || '0',
                     status: record.status,
-                    purpose: record.purpose || '',
-                    destination: record.destination || ''
+                    purpose: record.purpose || ''
+                    // ✅ destination removed
                 }))
             
             overtimeCache[userId] = approvedOvertimes
@@ -271,13 +278,14 @@ export default function DTRManagerContent() {
     }
 
     // ✅ Optimized: Pre-calculate date ranges once
-function getLeaveDetailsForDateOptimized(
-    dateStr: string, 
-    passSlips: PassSlip[], 
-    overtimes: OvertimeRequest[], 
-    travelOrders: TravelOrderRequest[]
-): any[] {
-    const details: any[] = []
+    function getLeaveDetailsForDateOptimized(
+        dateStr: string, 
+        passSlips: PassSlip[], 
+        overtimes: OvertimeRequest[], 
+        travelOrders: TravelOrderRequest[]
+    ): any[] {
+        const details: any[] = []
+        
         // Pre-calculate date ranges
         const passSlipRanges = passSlips.map(slip => ({
             ...slip,
@@ -316,7 +324,8 @@ function getLeaveDetailsForDateOptimized(
                     type: 'Overtime',
                     purpose: overtime.purpose || '',
                     startTime: new Date(overtime.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                    endTime: new Date(overtime.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    endTime: new Date(overtime.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+                    // ✅ destination removed
                 })
             }
         }
@@ -348,167 +357,203 @@ function getLeaveDetailsForDateOptimized(
     }
 
     // ✅ OPTIMIZED: Fetch all data in parallel with caching
-    async function fetchAllDTRRecords(month: string, forceRefresh = false) {
-        // Prevent concurrent execution
-        if (isLoadingRef.current) {
-            console.log('Fetch already in progress, skipping...')
+// Replace the fetchAllDTRRecords function with this debug version
+
+async function fetchAllDTRRecords(month: string, forceRefresh = false) {
+    // Prevent concurrent execution
+    if (isLoadingRef.current) {
+        console.log('Fetch already in progress, skipping...')
+        return
+    }
+    
+    isLoadingRef.current = true
+    setLoading(true)
+    
+    try {
+        // Check cache
+        if (!forceRefresh) {
+            try {
+                const cached = sessionStorage.getItem(CACHE_KEY)
+                if (cached) {
+                    const { data, timestamp, month: cachedMonth } = JSON.parse(cached)
+                    if (cachedMonth === month && Date.now() - timestamp < CACHE_DURATION) {
+                        setDtrRecords(data)
+                        setLoading(false)
+                        isLoadingRef.current = false
+                        return
+                    }
+                }
+            } catch (e) {
+                // Cache parse error, continue to fetch
+            }
+        }
+        
+        // ✅ Only fetch DTR records for COS-JO employees
+        const cosEmployees = employees.filter(emp => emp.role === 'cos' || emp.role === 'COS-JO')
+        console.log(`📊 Processing ${cosEmployees.length} COS-JO employees`)
+        
+        if (cosEmployees.length === 0) {
+            console.log('⚠️ No COS-JO employees found')
+            setDtrRecords([])
+            setLoading(false)
+            isLoadingRef.current = false
             return
         }
         
-        isLoadingRef.current = true
-        setLoading(true)
-        
-        try {
-            // Check cache
-            if (!forceRefresh) {
-                try {
-                    const cached = sessionStorage.getItem(CACHE_KEY)
-                    if (cached) {
-                        const { data, timestamp, month: cachedMonth } = JSON.parse(cached)
-                        if (cachedMonth === month && Date.now() - timestamp < CACHE_DURATION) {
-                            setDtrRecords(data)
-                            setLoading(false)
-                            isLoadingRef.current = false
-                            return
-                        }
-                    }
-                } catch (e) {
-                    // Cache parse error, continue to fetch
+        // Step 1: Fetch all DTR records in parallel for COS-JO employees only
+        const dtrPromises = cosEmployees.map(async (employee) => {
+            try {
+                const response = await axios.get(`/api/dtr/${employee.id}`)
+                const records = response.data.data || []
+                console.log(`📋 DTR records for ${employee.name}: ${records.length} records`)
+                if (records.length > 0) {
+                    console.log(`📋 First record sample:`, records[0])
                 }
+                return { employee, records }
+            } catch (error) {
+                console.log(`❌ Error fetching DTR records for ${employee.name}:`, error)
+                return { employee, records: [] }
             }
+        })
+        
+        const dtrResults = await Promise.all(dtrPromises)
+        
+        // Step 2: Fetch all requests (pass slips, overtime, travel orders) in parallel for COS-JO employees only
+        const requestsPromises = cosEmployees.map(async (employee) => {
+            const [passSlips, overtimes, travelOrders] = await Promise.all([
+                fetchPassSlips(employee.id),
+                fetchOvertimeRequests(employee.id),
+                fetchTravelOrderRequests(employee.id)
+            ])
+            console.log(`📋 Requests for ${employee.name}: ${passSlips.length} pass slips, ${overtimes.length} overtimes, ${travelOrders.length} travel orders`)
+            return { employee, passSlips, overtimes, travelOrders }
+        })
+        
+        const requestResults = await Promise.all(requestsPromises)
+        
+        // Step 3: Process all data
+        const allRecords: DTRRecord[] = []
+        
+        for (const employeeData of requestResults) {
+            const { employee, passSlips, overtimes, travelOrders } = employeeData
+            const dtrResult = dtrResults.find(r => r.employee.id === employee.id)
+            const records = dtrResult?.records || []
             
-            // Step 1: Fetch all DTR records in parallel with Promise.allSettled for better error handling
-            const dtrPromises = employees.map(employee => 
-                axios.get(`/api/dtr/${employee.id}`)
-                    .then(response => ({ employee, records: response.data.data || [] }))
-                    .catch(() => ({ employee, records: [] }))
-            )
+            console.log(`🔍 Filtering records for ${employee.name} with month: ${month}`)
+            console.log(`🔍 All record dates:`, records.map((r: any) => r.date))
             
-            const dtrResults = await Promise.all(dtrPromises)
-            
-            // Step 2: Fetch all requests (pass slips, overtime, travel orders) in parallel
-            const requestsPromises = employees.map(async (employee) => {
-                const [passSlips, overtimes, travelOrders] = await Promise.all([
-                    fetchPassSlips(employee.id),
-                    fetchOvertimeRequests(employee.id),
-                    fetchTravelOrderRequests(employee.id)
-                ])
-                return { employee, passSlips, overtimes, travelOrders }
+            const monthRecords = records.filter((record: any) => {
+                const recordMonth = record.date?.substring(0, 7)
+                const matches = recordMonth === month
+                if (!matches) {
+                    console.log(`⏭️ Skipping record date ${record.date} (month: ${recordMonth})`)
+                }
+                return matches
             })
             
-            const requestResults = await Promise.all(requestsPromises)
+            console.log(`📊 ${employee.name}: ${monthRecords.length} records in ${month}`)
             
-            // Step 3: Process all data
-            const allRecords: DTRRecord[] = []
-            
-            for (const employeeData of requestResults) {
-                const { employee, passSlips, overtimes, travelOrders } = employeeData
-                const dtrResult = dtrResults.find(r => r.employee.id === employee.id)
-                const records = dtrResult?.records || []
+            // Process each record
+            for (const record of monthRecords) {
+                const leaveDetails = getLeaveDetailsForDateOptimized(record.date, passSlips, overtimes, travelOrders)
+                let displayStatus = record.status || 'Present'
                 
-                const monthRecords = records.filter((record: any) => 
-                    record.date?.startsWith(month)
-                )
-                
-                // Process each record
-                for (const record of monthRecords) {
-                    const leaveDetails = getLeaveDetailsForDateOptimized(record.date, passSlips, overtimes, travelOrders)
-                    let displayStatus = record.status || 'Present'
+                if (leaveDetails.length > 0) {
+                    let foundStatus = false
                     
-                    if (leaveDetails.length > 0) {
-                        let foundStatus = false
-                        
-                        for (const detail of leaveDetails) {
-                            if (detail.type === 'Overtime') {
-                                displayStatus = 'Overtime'
-                                foundStatus = true
-                                break
-                            } else if (detail.type === 'Travel Order') {
-                                displayStatus = 'Travel Order'
-                                foundStatus = true
-                                break
-                            } else {
-                                const mappedStatus = mapPassSlipTypeToStatus(detail.type)
-                                if (mappedStatus) {
-                                    displayStatus = mappedStatus
-                                    foundStatus = true
-                                    break
-                                }
-                            }
-                        }
-                        
-                        if (!foundStatus && leaveDetails.length > 0) {
-                            const firstType = leaveDetails[0]?.type
-                            const mappedStatus = mapPassSlipTypeToStatus(firstType)
+                    for (const detail of leaveDetails) {
+                        if (detail.type === 'Overtime') {
+                            displayStatus = 'Overtime'
+                            foundStatus = true
+                            break
+                        } else if (detail.type === 'Travel Order') {
+                            displayStatus = 'Travel Order'
+                            foundStatus = true
+                            break
+                        } else {
+                            const mappedStatus = mapPassSlipTypeToStatus(detail.type)
                             if (mappedStatus) {
                                 displayStatus = mappedStatus
-                            } else if (firstType === 'Overtime') {
-                                displayStatus = 'Overtime'
-                            } else if (firstType === 'Travel Order') {
-                                displayStatus = 'Travel Order'
+                                foundStatus = true
+                                break
                             }
                         }
                     }
                     
-                    const date = new Date(record.date)
-                    const isWeekend = date.getDay() === 0 || date.getDay() === 6
-                    
-                    if (isWeekend && !record.timeInAM && !record.timeInPM && record.status !== 'Leave') {
-                        displayStatus = 'Weekend'
+                    if (!foundStatus && leaveDetails.length > 0) {
+                        const firstType = leaveDetails[0]?.type
+                        const mappedStatus = mapPassSlipTypeToStatus(firstType)
+                        if (mappedStatus) {
+                            displayStatus = mappedStatus
+                        } else if (firstType === 'Overtime') {
+                            displayStatus = 'Overtime'
+                        } else if (firstType === 'Travel Order') {
+                            displayStatus = 'Travel Order'
+                        }
                     }
-                    
-                    if (!record.timeInAM && !record.timeOutAM && !record.timeInPM && !record.timeOutPM && 
-                        displayStatus === 'Present' && !isWeekend) {
-                        displayStatus = 'Absent'
-                    }
-                    
-                    if ((record.timeInAM || record.timeOutAM || record.timeInPM || record.timeOutPM) && 
-                        displayStatus === 'Leave' && leaveDetails.length === 0) {
-                        displayStatus = 'Present'
-                    }
-                    
-                    allRecords.push({
-                        id: record.id || '',
-                        employeeId: employee.employeeId,
-                        employeeName: employee.name,
-                        date: record.date || '',
-                        timeInAM: record.timeInAM || '',
-                        timeOutAM: record.timeOutAM || '',
-                        timeInPM: record.timeInPM || '',
-                        timeOutPM: record.timeOutPM || '',
-                        totalHours: record.totalHours || '',
-                        status: displayStatus,
-                        locationInAM: record.locationInAM || '',
-                        locationOutAM: record.locationOutAM || '',
-                        locationInPM: record.locationInPM || '',
-                        locationOutPM: record.locationOutPM || '',
-                        leaveDetails: leaveDetails.length > 0 ? leaveDetails : []
-                    })
                 }
+                
+                const date = new Date(record.date)
+                const isWeekend = date.getDay() === 0 || date.getDay() === 6
+                
+                if (isWeekend && !record.timeInAM && !record.timeInPM && record.status !== 'Leave') {
+                    displayStatus = 'Weekend'
+                }
+                
+                if (!record.timeInAM && !record.timeOutAM && !record.timeInPM && !record.timeOutPM && 
+                    displayStatus === 'Present' && !isWeekend) {
+                    displayStatus = 'Absent'
+                }
+                
+                if ((record.timeInAM || record.timeOutAM || record.timeInPM || record.timeOutPM) && 
+                    displayStatus === 'Leave' && leaveDetails.length === 0) {
+                    displayStatus = 'Present'
+                }
+                
+                allRecords.push({
+                    id: record.id || '',
+                    employeeId: employee.employeeId,
+                    employeeName: employee.name,
+                    date: record.date || '',
+                    timeInAM: record.timeInAM || '',
+                    timeOutAM: record.timeOutAM || '',
+                    timeInPM: record.timeInPM || '',
+                    timeOutPM: record.timeOutPM || '',
+                    totalHours: record.totalHours || '',
+                    status: displayStatus,
+                    locationInAM: record.locationInAM || '',
+                    locationOutAM: record.locationOutAM || '',
+                    locationInPM: record.locationInPM || '',
+                    locationOutPM: record.locationOutPM || '',
+                    leaveDetails: leaveDetails.length > 0 ? leaveDetails : []
+                })
             }
-            
-            allRecords.sort((a, b) => b.date.localeCompare(a.date))
-            setDtrRecords(allRecords)
-            
-            // Save to cache
-            try {
-                sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-                    data: allRecords,
-                    month: month,
-                    timestamp: Date.now()
-                }))
-            } catch (e) {
-                // Cache storage error, ignore
-            }
-            
-        } catch (error) {
-            console.error('Error fetching DTR records:', error)
-            setDtrRecords([])
-        } finally {
-            setLoading(false)
-            isLoadingRef.current = false
         }
+        
+        console.log(`✅ Total DTR records loaded: ${allRecords.length}`)
+        allRecords.sort((a, b) => b.date.localeCompare(a.date))
+        setDtrRecords(allRecords)
+        
+        // Save to cache
+        try {
+            sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+                data: allRecords,
+                month: month,
+                timestamp: Date.now()
+            }))
+        } catch (e) {
+            // Cache storage error, ignore
+        }
+        
+    } catch (error) {
+        console.error('Error fetching DTR records:', error)
+        setDtrRecords([])
+    } finally {
+        setLoading(false)
+        isLoadingRef.current = false
     }
+}
+
 
     const goToPage = (page: number) => {
         if (page >= 1 && page <= totalPages) {
@@ -864,7 +909,8 @@ function getLeaveDetailsForDateOptimized(
                                                 <span className="font-medium">Purpose:</span> {detail.purpose}
                                             </p>
                                         )}
-                                        {detail.destination && (
+                                        {/* ✅ Only show destination if it exists and type is not Overtime */}
+                                        {detail.destination && detail.type !== 'Overtime' && (
                                             <p className="text-sm text-gray-600">
                                                 <span className="font-medium">Destination:</span> {detail.destination}
                                             </p>
