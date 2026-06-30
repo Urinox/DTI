@@ -82,7 +82,6 @@ export default function DTRContent({username, userId}: {username: string, userId
     const [hasTodayRecord, setHasTodayRecord] = useState(false)
     const inputRef = useRef<HTMLInputElement>(null)
     const [isGettingLocation, setIsGettingLocation] = useState(false)
-    const [locationPermission, setLocationPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown')
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -112,78 +111,17 @@ export default function DTRContent({username, userId}: {username: string, userId
         }
     }, [editingRecord])
 
-    // ✅ Check location permission status
-    useEffect(() => {
-        async function checkPermission() {
-            if (navigator.permissions) {
-                try {
-                    const result = await navigator.permissions.query({ name: 'geolocation' })
-                    setLocationPermission(result.state as 'granted' | 'denied' | 'prompt')
-                    
-                    // Listen for permission changes
-                    result.onchange = () => {
-                        setLocationPermission(result.state as 'granted' | 'denied' | 'prompt')
-                        if (result.state === 'granted') {
-                            setMessage('✅ Location access granted. You can now time-in/out.')
-                        } else if (result.state === 'denied') {
-                            setMessage('⚠️ Location access denied. Please enable location in browser settings.')
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error checking permission:', error)
-                }
-            }
-        }
-        checkPermission()
-    }, [])
-
-    // ✅ Request location permission
-    async function requestLocationPermission(): Promise<boolean> {
-        try {
-            const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    enableHighAccuracy: true,
-                    timeout: 5000
-                })
-            })
-            if (position) {
-                setLocationPermission('granted')
-                return true
-            }
-            return false
-        } catch (error: any) {
-            if (error.code === 1) {
-                setLocationPermission('denied')
-                setMessage('⚠️ Location access denied. Please enable location in browser settings and refresh the page.')
-            }
-            return false
-        }
-    }
-
-    // ✅ Get real-time GPS location with permission handling
+    // ✅ Get location with fallback (silently fails, doesn't block time-in/out)
     async function getCurrentLocation(): Promise<string> {
-        // First, check if we have permission
-        if (locationPermission === 'denied') {
-            return 'GPS access denied - Please enable location in browser settings and refresh the page'
-        }
-
-        // If permission is unknown or prompt, try to request it
-        if (locationPermission === 'unknown' || locationPermission === 'prompt') {
-            const granted = await requestLocationPermission()
-            if (!granted) {
-                return 'GPS access denied - Please allow location access'
-            }
-        }
-
         return new Promise((resolve) => {
             if (!navigator.geolocation) {
-                resolve('GPS not available on this device')
+                resolve('')
                 return
             }
 
             const timeoutId = setTimeout(() => {
-                resolve('GPS location timeout')
-            }, 15000)
+                resolve('')
+            }, 5000)
 
             setIsGettingLocation(true)
 
@@ -207,29 +145,14 @@ export default function DTRContent({username, userId}: {username: string, userId
                             resolve(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
                         })
                 },
-                (error) => {
+                () => {
                     clearTimeout(timeoutId)
                     setIsGettingLocation(false)
-                    console.error('Geolocation error:', error.message)
-                    
-                    switch(error.code) {
-                        case error.PERMISSION_DENIED:
-                            setLocationPermission('denied')
-                            resolve('GPS access denied - Please allow location in browser settings and refresh')
-                            break
-                        case error.POSITION_UNAVAILABLE:
-                            resolve('GPS signal unavailable - Please enable GPS or move to an open area')
-                            break
-                        case error.TIMEOUT:
-                            resolve('GPS location timeout - Please try again')
-                            break
-                        default:
-                            resolve(`GPS error: ${error.message}`)
-                    }
+                    resolve('')
                 },
                 { 
                     enableHighAccuracy: true, 
-                    timeout: 10000,
+                    timeout: 5000,
                     maximumAge: 0
                 }
             )
@@ -740,12 +663,6 @@ export default function DTRContent({username, userId}: {username: string, userId
             return
         }
 
-        // Check if location is denied
-        if (locationPermission === 'denied') {
-            setMessage('⚠️ Location access is blocked. Please enable location in browser settings and refresh the page.')
-            return
-        }
-
         if (!isTimeAllowed()) {
             setMessage('Time-in is only available from 6:00 AM to 7:00 PM')
             return
@@ -775,32 +692,29 @@ export default function DTRContent({username, userId}: {username: string, userId
         setMessage('')
 
         try {
-            // ✅ Get real-time GPS location first
-            const location = await getCurrentLocation()
-            
-            // Check if location is valid (not an error message)
-            if (location.includes('GPS') || location.includes('denied') || location.includes('unavailable') || location.includes('timeout')) {
-                setMessage(`⚠️ ${location}`)
-                setLoading(false)
-                return
-            }
-
             const now = new Date()
             const timeString = now.toTimeString().split(' ')[0]
             const dateString = now.toISOString().split('T')[0]
             
+            // ✅ Try to get location, but continue regardless
+            let location = ''
+            try {
+                location = await getCurrentLocation()
+            } catch (e) {
+                // Location failed silently, continue
+            }
+            
             const payload: any = {
                 date: dateString,
-                session: sessionType,
-                location: location
+                session: sessionType
             }
             
             if (sessionType === 'morning') {
                 payload.timeInAM = timeString
-                payload.locationInAM = location
+                if (location) payload.locationInAM = location
             } else {
                 payload.timeInPM = timeString
-                payload.locationInPM = location
+                if (location) payload.locationInPM = location
             }
             
             const response = await axios.post(`/api/dtr/${session.user.id}`, payload)
@@ -809,13 +723,13 @@ export default function DTRContent({username, userId}: {username: string, userId
                 if (sessionType === 'morning') {
                     setIsTimeInAM(true)
                     setTimeInAM(timeString)
-                    setLocationInAM(location)
+                    if (location) setLocationInAM(location)
                 } else {
                     setIsTimeInPM(true)
                     setTimeInPM(timeString)
-                    setLocationInPM(location)
+                    if (location) setLocationInPM(location)
                 }
-                setMessage(`✅ Time-in recorded (${sessionType}) at ${location}`)
+                setMessage(`✅ Time-in recorded (${sessionType})${location ? ` at ${location}` : ''}`)
                 setHasTodayRecord(true)
                 await loadData(selectedMonth)
                 await checkTodayRecord()
@@ -831,12 +745,6 @@ export default function DTRContent({username, userId}: {username: string, userId
     async function handleTimeOut() {
         if (!session?.user?.id) {
             setMessage('Please login first')
-            return
-        }
-
-        // Check if location is denied
-        if (locationPermission === 'denied') {
-            setMessage('⚠️ Location access is blocked. Please enable location in browser settings and refresh the page.')
             return
         }
 
@@ -873,32 +781,29 @@ export default function DTRContent({username, userId}: {username: string, userId
         setMessage('')
 
         try {
-            // ✅ Get real-time GPS location first
-            const location = await getCurrentLocation()
-            
-            // Check if location is valid (not an error message)
-            if (location.includes('GPS') || location.includes('denied') || location.includes('unavailable') || location.includes('timeout')) {
-                setMessage(`⚠️ ${location}`)
-                setLoading(false)
-                return
-            }
-
             const now = new Date()
             const timeString = now.toTimeString().split(' ')[0]
             const dateString = now.toISOString().split('T')[0]
             
+            // ✅ Try to get location, but continue regardless
+            let location = ''
+            try {
+                location = await getCurrentLocation()
+            } catch (e) {
+                // Location failed silently, continue
+            }
+            
             const payload: any = {
                 date: dateString,
-                session: sessionType,
-                location: location
+                session: sessionType
             }
             
             if (sessionType === 'morning') {
                 payload.timeOutAM = timeString
-                payload.locationOutAM = location
+                if (location) payload.locationOutAM = location
             } else {
                 payload.timeOutPM = timeString
-                payload.locationOutPM = location
+                if (location) payload.locationOutPM = location
             }
             
             const response = await axios.put(`/api/dtr/${session.user.id}`, payload)
@@ -907,13 +812,13 @@ export default function DTRContent({username, userId}: {username: string, userId
                 if (sessionType === 'morning') {
                     setIsTimeOutAM(true)
                     setTimeOutAM(timeString)
-                    setLocationOutAM(location)
+                    if (location) setLocationOutAM(location)
                 } else {
                     setIsTimeOutPM(true)
                     setTimeOutPM(timeString)
-                    setLocationOutPM(location)
+                    if (location) setLocationOutPM(location)
                 }
-                setMessage(`✅ Time-out recorded (${sessionType}) at ${location}`)
+                setMessage(`✅ Time-out recorded (${sessionType})${location ? ` at ${location}` : ''}`)
                 await loadData(selectedMonth)
                 await checkTodayRecord()
             }
@@ -977,20 +882,20 @@ export default function DTRContent({username, userId}: {username: string, userId
                     <div className='flex gap-4 mt-1'>
                         <span className={`text-sm font-semibold ${isMorningSession ? 'text-green-600' : 'text-gray-400'}`}>
                             Morning
-                            {isTimeInAM && !isTimeOutAM ? '' : isTimeOutAM ? '' : ''}
+                            {isTimeInAM && !isTimeOutAM ? ' (In)' : isTimeOutAM ? ' (Out)' : ''}
+                            {locationInAM && <span className='text-xs text-gray-500 ml-1'>📍{locationInAM}</span>}
+                            {locationOutAM && <span className='text-xs text-gray-500 ml-1'>📍{locationOutAM}</span>}
                         </span>
                         <span className={`text-sm font-semibold ${isAfternoonSession ? 'text-orange-600' : 'text-gray-400'}`}>
                             Afternoon
-                            {isTimeInPM && !isTimeOutPM ? '' : isTimeOutPM ? '' : ''}
+                            {isTimeInPM && !isTimeOutPM ? ' (In)' : isTimeOutPM ? ' (Out)' : ''}
+                            {locationInPM && <span className='text-xs text-gray-500 ml-1'>📍{locationInPM}</span>}
+                            {locationOutPM && <span className='text-xs text-gray-500 ml-1'>📍{locationOutPM}</span>}
                         </span>
                     </div>
 
                     {!timeAllowed && (
                         <p className='text-xs text-red-500 mt-1'>Time-in/out available from 6:00 AM to 7:00 PM</p>
-                    )}
-
-                    {locationPermission === 'denied' && (
-                        <p className='text-xs text-red-500 mt-1'>⚠️ Location access blocked. Please enable in browser settings and refresh.</p>
                     )}
 
                     {message && (
@@ -1007,7 +912,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                             type='button' 
                             value={isGettingLocation ? 'Getting GPS...' : 'Time In'}
                             onClick={handleTimeIn}
-                            disabled={isTimeInDisabled || isGettingLocation || locationPermission === 'denied'}
+                            disabled={isTimeInDisabled}
                         />
                         <input 
                             className={`font-semibold text-white px-6 py-1 rounded-lg cursor-pointer transition-colors disabled:opacity-50 ${
@@ -1016,19 +921,11 @@ export default function DTRContent({username, userId}: {username: string, userId
                             type='button' 
                             value={isGettingLocation ? 'Getting GPS...' : 'Time Out'}
                             onClick={handleTimeOut}
-                            disabled={isTimeOutDisabled || isGettingLocation || locationPermission === 'denied'}
+                            disabled={isTimeOutDisabled}
                         />
                     </div>
                     {isGettingLocation && (
-                        <p className='text-xs text-blue-500 mt-1'>Getting your GPS location...</p>
-                    )}
-                    {locationPermission === 'denied' && (
-                        <button 
-                            onClick={() => window.location.reload()}
-                            className='text-xs text-blue-600 underline mt-1 cursor-pointer'
-                        >
-                            Refresh page after enabling location
-                        </button>
+                        <p className='text-xs text-blue-500 mt-1'>📍 Getting your GPS location...</p>
                     )}
                 </div>
                 
@@ -1127,7 +1024,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeInAM || '-'}</span>
                                                 {dayData.record?.locationInAM && (
-                                                    <span className='text-xs text-gray-500'>{dayData.record.locationInAM}</span>
+                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationInAM}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -1135,7 +1032,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeOutAM || '-'}</span>
                                                 {dayData.record?.locationOutAM && (
-                                                    <span className='text-xs text-gray-500'>{dayData.record.locationOutAM}</span>
+                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationOutAM}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -1143,7 +1040,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeInPM || '-'}</span>
                                                 {dayData.record?.locationInPM && (
-                                                    <span className='text-xs text-gray-500'>{dayData.record.locationInPM}</span>
+                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationInPM}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -1151,7 +1048,7 @@ export default function DTRContent({username, userId}: {username: string, userId
                                             <div className='flex flex-col'>
                                                 <span>{dayData.record?.timeOutPM || '-'}</span>
                                                 {dayData.record?.locationOutPM && (
-                                                    <span className='text-xs text-gray-500'>{dayData.record.locationOutPM}</span>
+                                                    <span className='text-xs text-gray-500'>📍{dayData.record.locationOutPM}</span>
                                                 )}
                                             </div>
                                         </td>
