@@ -1,7 +1,7 @@
 // components/Admin/Content/DTRManagerContent.tsx
 import ContentHeader from "@/components/ContentHeader"
 import Image from "next/image"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useSession } from "next-auth/react"
 import axios from "axios"
 
@@ -64,11 +64,14 @@ interface TravelOrderRequest {
     expectedOutput: string
 }
 
+// Cache keys
+const CACHE_KEY = 'dtr_manager_cache'
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
 export default function DTRManagerContent() {
     const { data: session } = useSession()
     const [employees, setEmployees] = useState<Employee[]>([])
     const [dtrRecords, setDtrRecords] = useState<DTRRecord[]>([])
-    const [filteredRecords, setFilteredRecords] = useState<DTRRecord[]>([])
     const [selectedEmployee, setSelectedEmployee] = useState<string>('all')
     const [selectedMonth, setSelectedMonth] = useState('')
     const [loading, setLoading] = useState(true)
@@ -83,6 +86,7 @@ export default function DTRManagerContent() {
     const [passSlipsCache, setPassSlipsCache] = useState<Record<string, PassSlip[]>>({})
     const [overtimeCache, setOvertimeCache] = useState<Record<string, OvertimeRequest[]>>({})
     const [travelOrderCache, setTravelOrderCache] = useState<Record<string, TravelOrderRequest[]>>({})
+    const isLoadingRef = useRef(false)
 
     useEffect(() => {
         const now = new Date()
@@ -98,15 +102,36 @@ export default function DTRManagerContent() {
     }, [employees, selectedMonth])
 
     useEffect(() => {
-        filterRecords()
-    }, [dtrRecords, selectedEmployee, searchTerm])
-
-    useEffect(() => {
         if (editingRecord && inputRef.current) {
             inputRef.current.focus()
             inputRef.current.select()
         }
     }, [editingRecord])
+
+    // ✅ Memoized filtered records
+    const filteredRecords = useMemo(() => {
+        let filtered = [...dtrRecords]
+        
+        if (selectedEmployee !== 'all') {
+            filtered = filtered.filter(record => record.employeeId === selectedEmployee)
+        }
+        
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase()
+            filtered = filtered.filter(record => 
+                record.employeeName.toLowerCase().includes(term) ||
+                record.employeeId.includes(term)
+            )
+        }
+        
+        return filtered
+    }, [dtrRecords, selectedEmployee, searchTerm])
+
+    // ✅ Memoized paginated records
+    const totalPages = useMemo(() => Math.ceil(filteredRecords.length / itemsPerPage), [filteredRecords.length])
+    const startIndex = (currentPage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    const currentRecords = useMemo(() => filteredRecords.slice(startIndex, endIndex), [filteredRecords, startIndex, endIndex])
 
     async function fetchEmployees() {
         try {
@@ -246,7 +271,8 @@ export default function DTRManagerContent() {
         return `${year}-${month}-${day}`
     }
 
-    function getLeaveDetailsForDate(
+    // ✅ Optimized: Pre-calculate date ranges once
+    function getLeaveDetailsForDateOptimized(
         dateStr: string, 
         passSlips: PassSlip[], 
         overtimes: OvertimeRequest[], 
@@ -254,58 +280,57 @@ export default function DTRManagerContent() {
     ): any[] {
         const details: any[] = []
         
-        // Check pass slips
-        for (const passSlip of passSlips) {
-            const start = new Date(passSlip.startDate)
-            const end = new Date(passSlip.endDate)
-            
-            const startDateStr = getLocalDateStr(start)
-            const endDateStr = getLocalDateStr(end)
-            
-            if (dateStr >= startDateStr && dateStr <= endDateStr) {
+        // Pre-calculate date ranges
+        const passSlipRanges = passSlips.map(slip => ({
+            ...slip,
+            startStr: getLocalDateStr(new Date(slip.startDate)),
+            endStr: getLocalDateStr(new Date(slip.endDate))
+        }))
+        
+        const overtimeRanges = overtimes.map(ot => ({
+            ...ot,
+            startStr: getLocalDateStr(new Date(ot.startDate)),
+            endStr: getLocalDateStr(new Date(ot.endDate))
+        }))
+        
+        const travelOrderRanges = travelOrders.map(to => ({
+            ...to,
+            startStr: getLocalDateStr(new Date(to.startDate)),
+            endStr: getLocalDateStr(new Date(to.endDate))
+        }))
+        
+        // Check using pre-calculated strings
+        for (const slip of passSlipRanges) {
+            if (dateStr >= slip.startStr && dateStr <= slip.endStr) {
                 details.push({
-                    type: passSlip.type,
-                    purpose: passSlip.purpose || '',
-                    startTime: start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                    endTime: end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                    destination: passSlip.destination || ''
+                    type: slip.type,
+                    purpose: slip.purpose || '',
+                    startTime: new Date(slip.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    endTime: new Date(slip.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    destination: slip.destination || ''
                 })
             }
         }
         
-        // Check overtime requests
-        for (const overtime of overtimes) {
-            const start = new Date(overtime.startDate)
-            const end = new Date(overtime.endDate)
-            
-            const startDateStr = getLocalDateStr(start)
-            const endDateStr = getLocalDateStr(end)
-            
-            if (dateStr >= startDateStr && dateStr <= endDateStr) {
+        for (const overtime of overtimeRanges) {
+            if (dateStr >= overtime.startStr && dateStr <= overtime.endStr) {
                 details.push({
                     type: 'Overtime',
                     purpose: overtime.purpose || '',
-                    startTime: start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                    endTime: end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    startTime: new Date(overtime.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    endTime: new Date(overtime.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
                     destination: overtime.destination || ''
                 })
             }
         }
         
-        // Check travel orders
-        for (const travelOrder of travelOrders) {
-            const start = new Date(travelOrder.startDate)
-            const end = new Date(travelOrder.endDate)
-            
-            const startDateStr = getLocalDateStr(start)
-            const endDateStr = getLocalDateStr(end)
-            
-            if (dateStr >= startDateStr && dateStr <= endDateStr) {
+        for (const travelOrder of travelOrderRanges) {
+            if (dateStr >= travelOrder.startStr && dateStr <= travelOrder.endStr) {
                 details.push({
                     type: 'Travel Order',
                     purpose: travelOrder.purpose || '',
-                    startTime: start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                    endTime: end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    startTime: new Date(travelOrder.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    endTime: new Date(travelOrder.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
                     destination: travelOrder.destination || ''
                 })
             }
@@ -325,136 +350,168 @@ export default function DTRManagerContent() {
         return specialStatuses.includes(status)
     }
 
-    async function fetchAllDTRRecords(month: string) {
+    // ✅ OPTIMIZED: Fetch all data in parallel with caching
+    async function fetchAllDTRRecords(month: string, forceRefresh = false) {
+        // Prevent concurrent execution
+        if (isLoadingRef.current) {
+            console.log('Fetch already in progress, skipping...')
+            return
+        }
+        
+        isLoadingRef.current = true
         setLoading(true)
-        const allRecords: DTRRecord[] = []
         
         try {
-            for (const employee of employees) {
+            // Check cache
+            if (!forceRefresh) {
                 try {
-                    const dtrResponse = await axios.get(`/api/dtr/${employee.id}`)
-                    const records = dtrResponse.data.data || []
+                    const cached = sessionStorage.getItem(CACHE_KEY)
+                    if (cached) {
+                        const { data, timestamp, month: cachedMonth } = JSON.parse(cached)
+                        if (cachedMonth === month && Date.now() - timestamp < CACHE_DURATION) {
+                            setDtrRecords(data)
+                            setLoading(false)
+                            isLoadingRef.current = false
+                            return
+                        }
+                    }
+                } catch (e) {
+                    // Cache parse error, continue to fetch
+                }
+            }
+            
+            // Step 1: Fetch all DTR records in parallel with Promise.allSettled for better error handling
+            const dtrPromises = employees.map(employee => 
+                axios.get(`/api/dtr/${employee.id}`)
+                    .then(response => ({ employee, records: response.data.data || [] }))
+                    .catch(() => ({ employee, records: [] }))
+            )
+            
+            const dtrResults = await Promise.all(dtrPromises)
+            
+            // Step 2: Fetch all requests (pass slips, overtime, travel orders) in parallel
+            const requestsPromises = employees.map(async (employee) => {
+                const [passSlips, overtimes, travelOrders] = await Promise.all([
+                    fetchPassSlips(employee.id),
+                    fetchOvertimeRequests(employee.id),
+                    fetchTravelOrderRequests(employee.id)
+                ])
+                return { employee, passSlips, overtimes, travelOrders }
+            })
+            
+            const requestResults = await Promise.all(requestsPromises)
+            
+            // Step 3: Process all data
+            const allRecords: DTRRecord[] = []
+            
+            for (const employeeData of requestResults) {
+                const { employee, passSlips, overtimes, travelOrders } = employeeData
+                const dtrResult = dtrResults.find(r => r.employee.id === employee.id)
+                const records = dtrResult?.records || []
+                
+                const monthRecords = records.filter((record: any) => 
+                    record.date?.startsWith(month)
+                )
+                
+                // Process each record
+                for (const record of monthRecords) {
+                    const leaveDetails = getLeaveDetailsForDateOptimized(record.date, passSlips, overtimes, travelOrders)
+                    let displayStatus = record.status || 'Present'
                     
-                    const passSlips = await fetchPassSlips(employee.id)
-                    const overtimes = await fetchOvertimeRequests(employee.id)
-                    const travelOrders = await fetchTravelOrderRequests(employee.id)
-                    
-                    const monthRecords = records.filter((record: any) => 
-                        record.date?.startsWith(month)
-                    )
-                    
-                    monthRecords.forEach((record: any) => {
-                        const leaveDetails = getLeaveDetailsForDate(record.date, passSlips, overtimes, travelOrders)
-                        let displayStatus = record.status || 'Present'
+                    if (leaveDetails.length > 0) {
+                        let foundStatus = false
                         
-                        if (leaveDetails.length > 0) {
-                            let foundStatus = false
-                            
-                            for (const detail of leaveDetails) {
-                                if (detail.type === 'Overtime') {
-                                    displayStatus = 'Overtime'
-                                    foundStatus = true
-                                    break
-                                } else if (detail.type === 'Travel Order') {
-                                    displayStatus = 'Travel Order'
-                                    foundStatus = true
-                                    break
-                                } else {
-                                    const mappedStatus = mapPassSlipTypeToStatus(detail.type)
-                                    if (mappedStatus) {
-                                        displayStatus = mappedStatus
-                                        foundStatus = true
-                                        break
-                                    }
-                                }
-                            }
-                            
-                            if (!foundStatus && leaveDetails.length > 0) {
-                                const firstType = leaveDetails[0]?.type
-                                const mappedStatus = mapPassSlipTypeToStatus(firstType)
+                        for (const detail of leaveDetails) {
+                            if (detail.type === 'Overtime') {
+                                displayStatus = 'Overtime'
+                                foundStatus = true
+                                break
+                            } else if (detail.type === 'Travel Order') {
+                                displayStatus = 'Travel Order'
+                                foundStatus = true
+                                break
+                            } else {
+                                const mappedStatus = mapPassSlipTypeToStatus(detail.type)
                                 if (mappedStatus) {
                                     displayStatus = mappedStatus
-                                } else if (firstType === 'Overtime') {
-                                    displayStatus = 'Overtime'
-                                } else if (firstType === 'Travel Order') {
-                                    displayStatus = 'Travel Order'
+                                    foundStatus = true
+                                    break
                                 }
                             }
                         }
                         
-                        const date = new Date(record.date)
-                        const isWeekend = date.getDay() === 0 || date.getDay() === 6
-                        
-                        if (isWeekend && !record.timeInAM && !record.timeInPM && record.status !== 'Leave') {
-                            displayStatus = 'Weekend'
+                        if (!foundStatus && leaveDetails.length > 0) {
+                            const firstType = leaveDetails[0]?.type
+                            const mappedStatus = mapPassSlipTypeToStatus(firstType)
+                            if (mappedStatus) {
+                                displayStatus = mappedStatus
+                            } else if (firstType === 'Overtime') {
+                                displayStatus = 'Overtime'
+                            } else if (firstType === 'Travel Order') {
+                                displayStatus = 'Travel Order'
+                            }
                         }
-                        
-                        if (!record.timeInAM && !record.timeOutAM && !record.timeInPM && !record.timeOutPM && 
-                            displayStatus === 'Present' && !isWeekend) {
-                            displayStatus = 'Absent'
-                        }
-                        
-                        if ((record.timeInAM || record.timeOutAM || record.timeInPM || record.timeOutPM) && 
-                            displayStatus === 'Leave' && leaveDetails.length === 0) {
-                            displayStatus = 'Present'
-                        }
-                        
-                        allRecords.push({
-                            id: record.id || '',
-                            employeeId: employee.employeeId,
-                            employeeName: employee.name,
-                            date: record.date || '',
-                            timeInAM: record.timeInAM || '',
-                            timeOutAM: record.timeOutAM || '',
-                            timeInPM: record.timeInPM || '',
-                            timeOutPM: record.timeOutPM || '',
-                            totalHours: record.totalHours || '',
-                            status: displayStatus,
-                            locationInAM: record.locationInAM || '',
-                            locationOutAM: record.locationOutAM || '',
-                            locationInPM: record.locationInPM || '',
-                            locationOutPM: record.locationOutPM || '',
-                            leaveDetails: leaveDetails.length > 0 ? leaveDetails : []
-                        })
+                    }
+                    
+                    const date = new Date(record.date)
+                    const isWeekend = date.getDay() === 0 || date.getDay() === 6
+                    
+                    if (isWeekend && !record.timeInAM && !record.timeInPM && record.status !== 'Leave') {
+                        displayStatus = 'Weekend'
+                    }
+                    
+                    if (!record.timeInAM && !record.timeOutAM && !record.timeInPM && !record.timeOutPM && 
+                        displayStatus === 'Present' && !isWeekend) {
+                        displayStatus = 'Absent'
+                    }
+                    
+                    if ((record.timeInAM || record.timeOutAM || record.timeInPM || record.timeOutPM) && 
+                        displayStatus === 'Leave' && leaveDetails.length === 0) {
+                        displayStatus = 'Present'
+                    }
+                    
+                    allRecords.push({
+                        id: record.id || '',
+                        employeeId: employee.employeeId,
+                        employeeName: employee.name,
+                        date: record.date || '',
+                        timeInAM: record.timeInAM || '',
+                        timeOutAM: record.timeOutAM || '',
+                        timeInPM: record.timeInPM || '',
+                        timeOutPM: record.timeOutPM || '',
+                        totalHours: record.totalHours || '',
+                        status: displayStatus,
+                        locationInAM: record.locationInAM || '',
+                        locationOutAM: record.locationOutAM || '',
+                        locationInPM: record.locationInPM || '',
+                        locationOutPM: record.locationOutPM || '',
+                        leaveDetails: leaveDetails.length > 0 ? leaveDetails : []
                     })
-                } catch (error) {
-                    console.log(`No DTR records for ${employee.name}`)
                 }
             }
             
             allRecords.sort((a, b) => b.date.localeCompare(a.date))
             setDtrRecords(allRecords)
+            
+            // Save to cache
+            try {
+                sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+                    data: allRecords,
+                    month: month,
+                    timestamp: Date.now()
+                }))
+            } catch (e) {
+                // Cache storage error, ignore
+            }
+            
         } catch (error) {
             console.error('Error fetching DTR records:', error)
             setDtrRecords([])
         } finally {
             setLoading(false)
+            isLoadingRef.current = false
         }
     }
-
-    function filterRecords() {
-        let filtered = [...dtrRecords]
-        
-        if (selectedEmployee !== 'all') {
-            filtered = filtered.filter(record => record.employeeId === selectedEmployee)
-        }
-        
-        if (searchTerm) {
-            const term = searchTerm.toLowerCase()
-            filtered = filtered.filter(record => 
-                record.employeeName.toLowerCase().includes(term) ||
-                record.employeeId.includes(term)
-            )
-        }
-        
-        setFilteredRecords(filtered)
-        setCurrentPage(1)
-    }
-
-    const totalPages = Math.ceil(filteredRecords.length / itemsPerPage)
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    const currentRecords = filteredRecords.slice(startIndex, endIndex)
 
     const goToPage = (page: number) => {
         if (page >= 1 && page <= totalPages) {
@@ -463,7 +520,6 @@ export default function DTRManagerContent() {
     }
 
     function handleDoubleClick(record: DTRRecord) {
-        // Only allow editing for non-special statuses
         if (isSpecialStatus(record.status)) {
             return
         }
@@ -511,6 +567,8 @@ export default function DTRManagerContent() {
                     r.id === record.id ? { ...r, status: editingStatus } : r
                 )
                 setDtrRecords(updatedRecords)
+                // Clear cache on update
+                sessionStorage.removeItem(CACHE_KEY)
                 setEditingRecord(null)
                 setEditingStatus('')
                 setTimeout(() => setMessage(''), 3000)
@@ -526,7 +584,8 @@ export default function DTRManagerContent() {
     const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const month = e.target.value
         setSelectedMonth(month)
-        fetchAllDTRRecords(month)
+        setCurrentPage(1)
+        fetchAllDTRRecords(month, true) // Force refresh on month change
     }
 
     function getStatusColor(status: string): string {
@@ -565,8 +624,8 @@ export default function DTRManagerContent() {
         setSelectedDetail(null)
     }
 
-    // Render status cell
-    function renderStatusCell(record: DTRRecord) {
+    // ✅ Memoized render function for status cell
+    const renderStatusCell = useCallback((record: DTRRecord) => {
         if (editingRecord === record.id) {
             return (
                 <input
@@ -590,12 +649,10 @@ export default function DTRManagerContent() {
                     title="Click to view details"
                 >
                     {record.status}
-                    <span className="ml-1 text-xs text-gray-400"></span>
                 </span>
             )
         }
 
-        // Non-special statuses (Present, Absent, Weekend) - editable on double-click
         return (
             <span 
                 onDoubleClick={() => handleDoubleClick(record)}
@@ -605,7 +662,54 @@ export default function DTRManagerContent() {
                 {record.status || 'Click to add status'}
             </span>
         )
-    }
+    }, [editingRecord, editingStatus])
+
+    // ✅ Memoized table row component
+    const TableRow = useCallback(({ record }: { record: DTRRecord }) => {
+        return (
+            <tr key={record.id} className='border-t-[1] border-gray-300 hover:bg-gray-50'>
+                <td className='pl-5 py-2'>{record.employeeId}</td>
+                <td className='pl-5 py-2'>{record.employeeName}</td>
+                <td className='pl-5 py-2'>{record.date}</td>
+                <td className='pl-5 py-2'>
+                    <div className='flex flex-col'>
+                        <span>{record.timeInAM || '-'}</span>
+                        {record.locationInAM && (
+                            <span className='text-[10px] text-gray-400'>{record.locationInAM}</span>
+                        )}
+                    </div>
+                </td>
+                <td className='pl-5 py-2'>
+                    <div className='flex flex-col'>
+                        <span>{record.timeOutAM || '-'}</span>
+                        {record.locationOutAM && (
+                            <span className='text-[10px] text-gray-400'>{record.locationOutAM}</span>
+                        )}
+                    </div>
+                </td>
+                <td className='pl-5 py-2'>
+                    <div className='flex flex-col'>
+                        <span>{record.timeInPM || '-'}</span>
+                        {record.locationInPM && (
+                            <span className='text-[10px] text-gray-400'>{record.locationInPM}</span>
+                        )}
+                    </div>
+                </td>
+                <td className='pl-5 py-2'>
+                    <div className='flex flex-col'>
+                        <span>{record.timeOutPM || '-'}</span>
+                        {record.locationOutPM && (
+                            <span className='text-[10px] text-gray-400'>{record.locationOutPM}</span>
+                        )}
+                    </div>
+                </td>
+                <td className='pl-5 py-2 font-medium'>{record.totalHours || '-'}</td>
+                <td className='pl-5 py-2'>
+                    {renderStatusCell(record)}
+                </td>
+            </tr>
+        )
+    }, [renderStatusCell])
 
     if (loading) {
         return (
@@ -692,47 +796,7 @@ export default function DTRManagerContent() {
                                     </tr>
                                 ) : (
                                     currentRecords.map((record) => (
-                                        <tr key={record.id} className='border-t-[1] border-gray-300 hover:bg-gray-50'>
-                                            <td className='pl-5 py-2'>{record.employeeId}</td>
-                                            <td className='pl-5 py-2'>{record.employeeName}</td>
-                                            <td className='pl-5 py-2'>{record.date}</td>
-                                            <td className='pl-5 py-2'>
-                                                <div className='flex flex-col'>
-                                                    <span>{record.timeInAM || '-'}</span>
-                                                    {record.locationInAM && (
-                                                        <span className='text-[10px] text-gray-400'>{record.locationInAM}</span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className='pl-5 py-2'>
-                                                <div className='flex flex-col'>
-                                                    <span>{record.timeOutAM || '-'}</span>
-                                                    {record.locationOutAM && (
-                                                        <span className='text-[10px] text-gray-400'>{record.locationOutAM}</span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className='pl-5 py-2'>
-                                                <div className='flex flex-col'>
-                                                    <span>{record.timeInPM || '-'}</span>
-                                                    {record.locationInPM && (
-                                                        <span className='text-[10px] text-gray-400'>{record.locationInPM}</span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className='pl-5 py-2'>
-                                                <div className='flex flex-col'>
-                                                    <span>{record.timeOutPM || '-'}</span>
-                                                    {record.locationOutPM && (
-                                                        <span className='text-[10px] text-gray-400'>{record.locationOutPM}</span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className='pl-5 py-2 font-medium'>{record.totalHours || '-'}</td>
-                                            <td className='pl-5 py-2'>
-                                                {renderStatusCell(record)}
-                                            </td>
-                                        </tr>
+                                        <TableRow key={record.id} record={record} />
                                     ))
                                 )}
                             </tbody>
