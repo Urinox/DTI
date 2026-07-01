@@ -916,6 +916,25 @@ async function fetchDTRRecords(month: string, leaves: LeaveRequest[] = [], overt
         return new Date(year, month + 1, 0).getDate()
     }
 
+    // ✅ Helper function to convert 24hr to 12hr format
+    function formatTimeTo12Hour(time: string): string {
+        if (!time || time === '-') return '-'
+        
+        const parts = time.split(':')
+        if (parts.length < 2) return time
+        
+        let hours = parseInt(parts[0])
+        const minutes = parts[1]
+        
+        if (isNaN(hours)) return time
+        
+        const ampm = hours >= 12 ? 'PM' : 'AM'
+        hours = hours % 12
+        hours = hours ? hours : 12
+        
+        return `${hours}:${minutes} ${ampm}`
+    }
+
 function generateMonthDays(month: string) {
     const [year, monthNum] = month.split('-').map(Number)
     const daysInMonth = getDaysInMonth(year, monthNum - 1)
@@ -940,7 +959,13 @@ function generateMonthDays(month: string) {
         days.push({
             date: dateStr,
             day: day,
-            record: record || null,
+            record: record ? {
+                ...record,
+                timeInAM: record.timeInAM ? formatTimeTo12Hour(record.timeInAM) : '',
+                timeOutAM: record.timeOutAM ? formatTimeTo12Hour(record.timeOutAM) : '',
+                timeInPM: record.timeInPM ? formatTimeTo12Hour(record.timeInPM) : '',
+                timeOutPM: record.timeOutPM ? formatTimeTo12Hour(record.timeOutPM) : ''
+            } : null,
             totalHours: totalHours,
             status: status,
             leaveDetails: leaveDetails,

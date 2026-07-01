@@ -14,7 +14,7 @@ interface Employee {
     designation: string
     division: string
     office: string
-    role?: string  // ✅ Add role field
+    role?: string
 }
 
 interface DTRRecord {
@@ -52,7 +52,6 @@ interface OvertimeRequest {
     hours: string
     status: string
     purpose: string
-    // ✅ destination removed
 }
 
 interface TravelOrderRequest {
@@ -142,7 +141,6 @@ export default function DTRManagerContent() {
             const data = response.data.data || []
             
             const formattedEmployees = data
-                // ✅ FILTER: Only include COS-JO users
                 .filter((user: any) => user.role === 'cos' || user.role === 'COS-JO')
                 .map((user: any, index: number) => ({
                     id: user.id || '',
@@ -213,7 +211,6 @@ export default function DTRManagerContent() {
                     hours: record.hours || '0',
                     status: record.status,
                     purpose: record.purpose || ''
-                    // ✅ destination removed
                 }))
             
             overtimeCache[userId] = approvedOvertimes
@@ -277,6 +274,25 @@ export default function DTRManagerContent() {
         return `${year}-${month}-${day}`
     }
 
+    // ✅ Helper function to convert 24hr to 12hr format
+    function formatTimeTo12Hour(time: string): string {
+        if (!time || time === '-') return '-'
+        
+        const parts = time.split(':')
+        if (parts.length < 2) return time
+        
+        let hours = parseInt(parts[0])
+        const minutes = parts[1]
+        
+        if (isNaN(hours)) return time
+        
+        const ampm = hours >= 12 ? 'PM' : 'AM'
+        hours = hours % 12
+        hours = hours ? hours : 12
+        
+        return `${hours}:${minutes} ${ampm}`
+    }
+
     // ✅ Optimized: Pre-calculate date ranges once
     function getLeaveDetailsForDateOptimized(
         dateStr: string, 
@@ -286,7 +302,6 @@ export default function DTRManagerContent() {
     ): any[] {
         const details: any[] = []
         
-        // Pre-calculate date ranges
         const passSlipRanges = passSlips.map(slip => ({
             ...slip,
             startStr: getLocalDateStr(new Date(slip.startDate)),
@@ -305,7 +320,6 @@ export default function DTRManagerContent() {
             endStr: getLocalDateStr(new Date(to.endDate))
         }))
         
-        // Check using pre-calculated strings
         for (const slip of passSlipRanges) {
             if (dateStr >= slip.startStr && dateStr <= slip.endStr) {
                 details.push({
@@ -325,27 +339,26 @@ export default function DTRManagerContent() {
                     purpose: overtime.purpose || '',
                     startTime: new Date(overtime.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
                     endTime: new Date(overtime.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-                    // ✅ destination removed
                 })
             }
         }
         
-for (const travelOrder of travelOrderRanges) {
-    if (dateStr >= travelOrder.startStr && dateStr <= travelOrder.endStr) {
-        const start = new Date(travelOrder.startDate)
-        const end = new Date(travelOrder.endDate)
-        const formattedStartDate = start.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-        const formattedEndDate = end.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-        
-        details.push({
-            type: 'Travel Order',
-            purpose: travelOrder.purpose || '',
-            startDate: formattedStartDate,  // ✅ This is the key field
-            endDate: formattedEndDate,      // ✅ This is the key field
-            destination: travelOrder.destination || ''
-        })
-    }
-}
+        for (const travelOrder of travelOrderRanges) {
+            if (dateStr >= travelOrder.startStr && dateStr <= travelOrder.endStr) {
+                const start = new Date(travelOrder.startDate)
+                const end = new Date(travelOrder.endDate)
+                const formattedStartDate = start.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                const formattedEndDate = end.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                
+                details.push({
+                    type: 'Travel Order',
+                    purpose: travelOrder.purpose || '',
+                    startDate: formattedStartDate,
+                    endDate: formattedEndDate,
+                    destination: travelOrder.destination || ''
+                })
+            }
+        }
         
         return details
     }
@@ -361,209 +374,196 @@ for (const travelOrder of travelOrderRanges) {
         return specialStatuses.includes(status)
     }
 
-    // ✅ OPTIMIZED: Fetch all data in parallel with caching
-// Replace the fetchAllDTRRecords function with this debug version
-
-async function fetchAllDTRRecords(month: string, forceRefresh = false) {
-    // Prevent concurrent execution
-    if (isLoadingRef.current) {
-        console.log('Fetch already in progress, skipping...')
-        return
-    }
-    
-    isLoadingRef.current = true
-    setLoading(true)
-    
-    try {
-        // Check cache
-        if (!forceRefresh) {
-            try {
-                const cached = sessionStorage.getItem(CACHE_KEY)
-                if (cached) {
-                    const { data, timestamp, month: cachedMonth } = JSON.parse(cached)
-                    if (cachedMonth === month && Date.now() - timestamp < CACHE_DURATION) {
-                        setDtrRecords(data)
-                        setLoading(false)
-                        isLoadingRef.current = false
-                        return
-                    }
-                }
-            } catch (e) {
-                // Cache parse error, continue to fetch
-            }
-        }
-        
-        // ✅ Only fetch DTR records for COS-JO employees
-        const cosEmployees = employees.filter(emp => emp.role === 'cos' || emp.role === 'COS-JO')
-        console.log(`📊 Processing ${cosEmployees.length} COS-JO employees`)
-        
-        if (cosEmployees.length === 0) {
-            console.log('⚠️ No COS-JO employees found')
-            setDtrRecords([])
-            setLoading(false)
-            isLoadingRef.current = false
+    async function fetchAllDTRRecords(month: string, forceRefresh = false) {
+        if (isLoadingRef.current) {
+            console.log('Fetch already in progress, skipping...')
             return
         }
         
-        // Step 1: Fetch all DTR records in parallel for COS-JO employees only
-        const dtrPromises = cosEmployees.map(async (employee) => {
-            try {
-                const response = await axios.get(`/api/dtr/${employee.id}`)
-                const records = response.data.data || []
-                console.log(`📋 DTR records for ${employee.name}: ${records.length} records`)
-                if (records.length > 0) {
-                    console.log(`📋 First record sample:`, records[0])
+        isLoadingRef.current = true
+        setLoading(true)
+        
+        try {
+            if (!forceRefresh) {
+                try {
+                    const cached = sessionStorage.getItem(CACHE_KEY)
+                    if (cached) {
+                        const { data, timestamp, month: cachedMonth } = JSON.parse(cached)
+                        if (cachedMonth === month && Date.now() - timestamp < CACHE_DURATION) {
+                            setDtrRecords(data)
+                            setLoading(false)
+                            isLoadingRef.current = false
+                            return
+                        }
+                    }
+                } catch (e) {
+                    // Cache parse error, continue to fetch
                 }
-                return { employee, records }
-            } catch (error) {
-                console.log(`❌ Error fetching DTR records for ${employee.name}:`, error)
-                return { employee, records: [] }
             }
-        })
-        
-        const dtrResults = await Promise.all(dtrPromises)
-        
-        // Step 2: Fetch all requests (pass slips, overtime, travel orders) in parallel for COS-JO employees only
-        const requestsPromises = cosEmployees.map(async (employee) => {
-            const [passSlips, overtimes, travelOrders] = await Promise.all([
-                fetchPassSlips(employee.id),
-                fetchOvertimeRequests(employee.id),
-                fetchTravelOrderRequests(employee.id)
-            ])
-            console.log(`📋 Requests for ${employee.name}: ${passSlips.length} pass slips, ${overtimes.length} overtimes, ${travelOrders.length} travel orders`)
-            return { employee, passSlips, overtimes, travelOrders }
-        })
-        
-        const requestResults = await Promise.all(requestsPromises)
-        
-        // Step 3: Process all data
-        const allRecords: DTRRecord[] = []
-        
-        for (const employeeData of requestResults) {
-            const { employee, passSlips, overtimes, travelOrders } = employeeData
-            const dtrResult = dtrResults.find(r => r.employee.id === employee.id)
-            const records = dtrResult?.records || []
             
-            console.log(`🔍 Filtering records for ${employee.name} with month: ${month}`)
-            console.log(`🔍 All record dates:`, records.map((r: any) => r.date))
+            const cosEmployees = employees.filter(emp => emp.role === 'cos' || emp.role === 'COS-JO')
+            console.log(`📊 Processing ${cosEmployees.length} COS-JO employees`)
             
-            const monthRecords = records.filter((record: any) => {
-                const recordMonth = record.date?.substring(0, 7)
-                const matches = recordMonth === month
-                if (!matches) {
-                    console.log(`⏭️ Skipping record date ${record.date} (month: ${recordMonth})`)
+            if (cosEmployees.length === 0) {
+                console.log('⚠️ No COS-JO employees found')
+                setDtrRecords([])
+                setLoading(false)
+                isLoadingRef.current = false
+                return
+            }
+            
+            const dtrPromises = cosEmployees.map(async (employee) => {
+                try {
+                    const response = await axios.get(`/api/dtr/${employee.id}`)
+                    const records = response.data.data || []
+                    console.log(`📋 DTR records for ${employee.name}: ${records.length} records`)
+                    if (records.length > 0) {
+                        console.log(`📋 First record sample:`, records[0])
+                    }
+                    return { employee, records }
+                } catch (error) {
+                    console.log(`❌ Error fetching DTR records for ${employee.name}:`, error)
+                    return { employee, records: [] }
                 }
-                return matches
             })
             
-            console.log(`📊 ${employee.name}: ${monthRecords.length} records in ${month}`)
+            const dtrResults = await Promise.all(dtrPromises)
             
-            // Process each record
-            for (const record of monthRecords) {
-                const leaveDetails = getLeaveDetailsForDateOptimized(record.date, passSlips, overtimes, travelOrders)
-                let displayStatus = record.status || 'Present'
+            const requestsPromises = cosEmployees.map(async (employee) => {
+                const [passSlips, overtimes, travelOrders] = await Promise.all([
+                    fetchPassSlips(employee.id),
+                    fetchOvertimeRequests(employee.id),
+                    fetchTravelOrderRequests(employee.id)
+                ])
+                console.log(`📋 Requests for ${employee.name}: ${passSlips.length} pass slips, ${overtimes.length} overtimes, ${travelOrders.length} travel orders`)
+                return { employee, passSlips, overtimes, travelOrders }
+            })
+            
+            const requestResults = await Promise.all(requestsPromises)
+            
+            const allRecords: DTRRecord[] = []
+            
+            for (const employeeData of requestResults) {
+                const { employee, passSlips, overtimes, travelOrders } = employeeData
+                const dtrResult = dtrResults.find(r => r.employee.id === employee.id)
+                const records = dtrResult?.records || []
                 
-                // ✅ Log the leave details to debug
-                if (leaveDetails.length > 0) {
-                    console.log(`📋 Leave details for ${record.date}:`, leaveDetails)
-                }
+                console.log(`🔍 Filtering records for ${employee.name} with month: ${month}`)
+                console.log(`🔍 All record dates:`, records.map((r: any) => r.date))
                 
-                if (leaveDetails.length > 0) {
-                    let foundStatus = false
+                const monthRecords = records.filter((record: any) => {
+                    const recordMonth = record.date?.substring(0, 7)
+                    const matches = recordMonth === month
+                    if (!matches) {
+                        console.log(`⏭️ Skipping record date ${record.date} (month: ${recordMonth})`)
+                    }
+                    return matches
+                })
+                
+                console.log(`📊 ${employee.name}: ${monthRecords.length} records in ${month}`)
+                
+                for (const record of monthRecords) {
+                    const leaveDetails = getLeaveDetailsForDateOptimized(record.date, passSlips, overtimes, travelOrders)
+                    let displayStatus = record.status || 'Present'
                     
-                    for (const detail of leaveDetails) {
-                        if (detail.type === 'Overtime') {
-                            displayStatus = 'Overtime'
-                            foundStatus = true
-                            break
-                        } else if (detail.type === 'Travel Order') {
-                            displayStatus = 'Travel Order'
-                            foundStatus = true
-                            break
-                        } else {
-                            const mappedStatus = mapPassSlipTypeToStatus(detail.type)
-                            if (mappedStatus) {
-                                displayStatus = mappedStatus
+                    if (leaveDetails.length > 0) {
+                        console.log(`📋 Leave details for ${record.date}:`, leaveDetails)
+                    }
+                    
+                    if (leaveDetails.length > 0) {
+                        let foundStatus = false
+                        
+                        for (const detail of leaveDetails) {
+                            if (detail.type === 'Overtime') {
+                                displayStatus = 'Overtime'
                                 foundStatus = true
                                 break
+                            } else if (detail.type === 'Travel Order') {
+                                displayStatus = 'Travel Order'
+                                foundStatus = true
+                                break
+                            } else {
+                                const mappedStatus = mapPassSlipTypeToStatus(detail.type)
+                                if (mappedStatus) {
+                                    displayStatus = mappedStatus
+                                    foundStatus = true
+                                    break
+                                }
+                            }
+                        }
+                        
+                        if (!foundStatus && leaveDetails.length > 0) {
+                            const firstType = leaveDetails[0]?.type
+                            const mappedStatus = mapPassSlipTypeToStatus(firstType)
+                            if (mappedStatus) {
+                                displayStatus = mappedStatus
+                            } else if (firstType === 'Overtime') {
+                                displayStatus = 'Overtime'
+                            } else if (firstType === 'Travel Order') {
+                                displayStatus = 'Travel Order'
                             }
                         }
                     }
                     
-                    if (!foundStatus && leaveDetails.length > 0) {
-                        const firstType = leaveDetails[0]?.type
-                        const mappedStatus = mapPassSlipTypeToStatus(firstType)
-                        if (mappedStatus) {
-                            displayStatus = mappedStatus
-                        } else if (firstType === 'Overtime') {
-                            displayStatus = 'Overtime'
-                        } else if (firstType === 'Travel Order') {
-                            displayStatus = 'Travel Order'
-                        }
+                    const date = new Date(record.date)
+                    const isWeekend = date.getDay() === 0 || date.getDay() === 6
+                    
+                    if (isWeekend && !record.timeInAM && !record.timeInPM && record.status !== 'Leave') {
+                        displayStatus = 'Weekend'
                     }
+                    
+                    if (!record.timeInAM && !record.timeOutAM && !record.timeInPM && !record.timeOutPM && 
+                        displayStatus === 'Present' && !isWeekend) {
+                        displayStatus = 'Absent'
+                    }
+                    
+                    if ((record.timeInAM || record.timeOutAM || record.timeInPM || record.timeOutPM) && 
+                        displayStatus === 'Leave' && leaveDetails.length === 0) {
+                        displayStatus = 'Present'
+                    }
+                    
+                    allRecords.push({
+                        id: record.id || '',
+                        employeeId: employee.employeeId,
+                        employeeName: employee.name,
+                        date: record.date || '',
+                        timeInAM: record.timeInAM ? formatTimeTo12Hour(record.timeInAM) : '',
+                        timeOutAM: record.timeOutAM ? formatTimeTo12Hour(record.timeOutAM) : '',
+                        timeInPM: record.timeInPM ? formatTimeTo12Hour(record.timeInPM) : '',
+                        timeOutPM: record.timeOutPM ? formatTimeTo12Hour(record.timeOutPM) : '',
+                        totalHours: record.totalHours || '',
+                        status: displayStatus,
+                        locationInAM: record.locationInAM || '',
+                        locationOutAM: record.locationOutAM || '',
+                        locationInPM: record.locationInPM || '',
+                        locationOutPM: record.locationOutPM || '',
+                        leaveDetails: leaveDetails.length > 0 ? leaveDetails : []
+                    })
                 }
-                
-                const date = new Date(record.date)
-                const isWeekend = date.getDay() === 0 || date.getDay() === 6
-                
-                if (isWeekend && !record.timeInAM && !record.timeInPM && record.status !== 'Leave') {
-                    displayStatus = 'Weekend'
-                }
-                
-                if (!record.timeInAM && !record.timeOutAM && !record.timeInPM && !record.timeOutPM && 
-                    displayStatus === 'Present' && !isWeekend) {
-                    displayStatus = 'Absent'
-                }
-                
-                if ((record.timeInAM || record.timeOutAM || record.timeInPM || record.timeOutPM) && 
-                    displayStatus === 'Leave' && leaveDetails.length === 0) {
-                    displayStatus = 'Present'
-                }
-                
-                allRecords.push({
-                    id: record.id || '',
-                    employeeId: employee.employeeId,
-                    employeeName: employee.name,
-                    date: record.date || '',
-                    timeInAM: record.timeInAM || '',
-                    timeOutAM: record.timeOutAM || '',
-                    timeInPM: record.timeInPM || '',
-                    timeOutPM: record.timeOutPM || '',
-                    totalHours: record.totalHours || '',
-                    status: displayStatus,
-                    locationInAM: record.locationInAM || '',
-                    locationOutAM: record.locationOutAM || '',
-                    locationInPM: record.locationInPM || '',
-                    locationOutPM: record.locationOutPM || '',
-                    leaveDetails: leaveDetails.length > 0 ? leaveDetails : []  // ✅ Preserve full details
-                })
             }
+            
+            console.log(`✅ Total DTR records loaded: ${allRecords.length}`)
+            allRecords.sort((a, b) => b.date.localeCompare(a.date))
+            setDtrRecords(allRecords)
+            
+            try {
+                sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+                    data: allRecords,
+                    month: month,
+                    timestamp: Date.now()
+                }))
+            } catch (e) {
+                // Cache storage error, ignore
+            }
+            
+        } catch (error) {
+            console.error('Error fetching DTR records:', error)
+            setDtrRecords([])
+        } finally {
+            setLoading(false)
+            isLoadingRef.current = false
         }
-        
-        console.log(`✅ Total DTR records loaded: ${allRecords.length}`)
-        allRecords.sort((a, b) => b.date.localeCompare(a.date))
-        setDtrRecords(allRecords)
-        
-        // Save to cache
-        try {
-            sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-                data: allRecords,
-                month: month,
-                timestamp: Date.now()
-            }))
-        } catch (e) {
-            // Cache storage error, ignore
-        }
-        
-    } catch (error) {
-        console.error('Error fetching DTR records:', error)
-        setDtrRecords([])
-    } finally {
-        setLoading(false)
-        isLoadingRef.current = false
     }
-}
-
 
     const goToPage = (page: number) => {
         if (page >= 1 && page <= totalPages) {
@@ -619,7 +619,6 @@ async function fetchAllDTRRecords(month: string, forceRefresh = false) {
                     r.id === record.id ? { ...r, status: editingStatus } : r
                 )
                 setDtrRecords(updatedRecords)
-                // Clear cache on update
                 sessionStorage.removeItem(CACHE_KEY)
                 setEditingRecord(null)
                 setEditingStatus('')
@@ -637,7 +636,7 @@ async function fetchAllDTRRecords(month: string, forceRefresh = false) {
         const month = e.target.value
         setSelectedMonth(month)
         setCurrentPage(1)
-        fetchAllDTRRecords(month, true) // Force refresh on month change
+        fetchAllDTRRecords(month, true)
     }
 
     function getStatusColor(status: string): string {
@@ -676,7 +675,6 @@ async function fetchAllDTRRecords(month: string, forceRefresh = false) {
         setSelectedDetail(null)
     }
 
-    // ✅ Memoized render function for status cell
     const renderStatusCell = useCallback((record: DTRRecord) => {
         if (editingRecord === record.id) {
             return (
@@ -716,7 +714,6 @@ async function fetchAllDTRRecords(month: string, forceRefresh = false) {
         )
     }, [editingRecord, editingStatus])
 
-    // ✅ Memoized table row component
     const TableRow = useCallback(({ record }: { record: DTRRecord }) => {
         return (
             <tr key={record.id} className='border-t-[1] border-gray-300 hover:bg-gray-50'>
@@ -902,44 +899,41 @@ async function fetchAllDTRRecords(month: string, forceRefresh = false) {
                             <p className="text-sm text-gray-600 mb-2">
                                 <span className="font-semibold">Date:</span> {selectedDetail.record.date}
                             </p>
-{selectedDetail.details.map((detail: any, index: number) => {
-    let displayType = ''
-    if (detail.type === 'Personal') displayType = 'Personal Calamity'
-    else if (detail.type === 'Emergency') displayType = 'Sick Leave'
-    else if (detail.type === 'Official') displayType = 'Vacation Leave'
-    else if (detail.type === 'Overtime') displayType = 'Overtime'
-    else if (detail.type === 'Travel Order') displayType = 'Travel Order'
-    else displayType = detail.type
-    
-    return (
-        <div key={index} className="bg-gray-50 rounded p-3 mb-3">
-            <p className="text-sm font-semibold text-gray-800">{displayType}</p>
-            {detail.purpose && (
-                <p className="text-sm text-gray-600 mt-1">
-                    <span className="font-medium">Purpose:</span> {detail.purpose}
-                </p>
-            )}
-            {/* ✅ Show destination if it exists and type is not Overtime */}
-            {detail.destination && detail.type !== 'Overtime' && (
-                <p className="text-sm text-gray-600">
-                    <span className="font-medium">Destination:</span> {detail.destination}
-                </p>
-            )}
-            {/* ✅ Show dates for Travel Order */}
-            {detail.type === 'Travel Order' && detail.startDate && detail.endDate && (
-                <p className="text-sm text-gray-600">
-                    <span className="font-medium">Dates:</span> {detail.startDate} - {detail.endDate}
-                </p>
-            )}
-            {/* ✅ Show times for other types */}
-            {(detail.type !== 'Travel Order' && detail.startTime && detail.endTime) && (
-                <p className="text-sm text-gray-600">
-                    <span className="font-medium">Time:</span> {detail.startTime} - {detail.endTime}
-                </p>
-            )}
-        </div>
-    )
-})}
+                            {selectedDetail.details.map((detail: any, index: number) => {
+                                let displayType = ''
+                                if (detail.type === 'Personal') displayType = 'Personal Calamity'
+                                else if (detail.type === 'Emergency') displayType = 'Sick Leave'
+                                else if (detail.type === 'Official') displayType = 'Vacation Leave'
+                                else if (detail.type === 'Overtime') displayType = 'Overtime'
+                                else if (detail.type === 'Travel Order') displayType = 'Travel Order'
+                                else displayType = detail.type
+                                
+                                return (
+                                    <div key={index} className="bg-gray-50 rounded p-3 mb-3">
+                                        <p className="text-sm font-semibold text-gray-800">{displayType}</p>
+                                        {detail.purpose && (
+                                            <p className="text-sm text-gray-600 mt-1">
+                                                <span className="font-medium">Purpose:</span> {detail.purpose}
+                                            </p>
+                                        )}
+                                        {detail.destination && detail.type !== 'Overtime' && (
+                                            <p className="text-sm text-gray-600">
+                                                <span className="font-medium">Destination:</span> {detail.destination}
+                                            </p>
+                                        )}
+                                        {detail.type === 'Travel Order' && detail.startDate && detail.endDate && (
+                                            <p className="text-sm text-gray-600">
+                                                <span className="font-medium">Dates:</span> {detail.startDate} - {detail.endDate}
+                                            </p>
+                                        )}
+                                        {(detail.type !== 'Travel Order' && detail.startTime && detail.endTime) && (
+                                            <p className="text-sm text-gray-600">
+                                                <span className="font-medium">Time:</span> {detail.startTime} - {detail.endTime}
+                                            </p>
+                                        )}
+                                    </div>
+                                )
+                            })}
                         </div>
                         <div className="mt-4 flex justify-end">
                             <button
