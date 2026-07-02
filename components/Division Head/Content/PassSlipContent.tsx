@@ -57,62 +57,59 @@ export default function PassSlipContent({ username = 'User' }: PassSlipContentPr
         }
     }
 
-async function handleApprove(requestId: string) {
-    try {
-        // ✅ Get the current user's profile info (Division Head)
-        const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
-        const userData = profileResponse.data.data
-        const profile = userData?.profile || userData || {}
-        
-        const approvedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Division Head'
-        const approvedByDesignation = profile.designation || session?.user?.profile?.designation || 'Division Head'
+    async function handleApprove(requestId: string) {
+        try {
+            const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
+            const userData = profileResponse.data.data
+            const profile = userData?.profile || userData || {}
+            
+            const approvedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Division Head'
+            const approvedByDesignation = profile.designation || session?.user?.profile?.designation || 'Division Head'
 
-        console.log('📋 Approving as Division Head:', approvedByName, approvedByDesignation)
-
-        const response = await axios.put('/api/pass_slip/update', {
-            requestId,
-            status: 'Pending Provincial',
-            approvedBy: session?.user?.id,
-            approvedByName: approvedByName,
-            approvedByDesignation: approvedByDesignation
-        })
-        
-        if (response.status === 200) {
-            alert('✅ Pass slip approved and sent to Provincial Director!')
-            fetchPassSlipData()
+            const response = await axios.put('/api/pass_slip/update', {
+                requestId,
+                status: 'Pending Provincial',
+                approvedBy: session?.user?.id,
+                approvedByName: approvedByName,
+                approvedByDesignation: approvedByDesignation
+            })
+            
+            if (response.status === 200) {
+                alert('✅ Pass slip approved and sent to Provincial Director!')
+                fetchPassSlipData()
+            }
+        } catch (error: any) {
+            console.error('Error approving pass slip:', error)
+            alert(error.response?.data?.message || '❌ Error approving pass slip')
         }
-    } catch (error: any) {
-        console.error('Error approving pass slip:', error)
-        alert(error.response?.data?.message || '❌ Error approving pass slip')
     }
-}
 
-async function handleDisapprove(requestId: string) {
-    try {
-        const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
-        const userData = profileResponse.data.data
-        const profile = userData?.profile || userData || {}
-        
-        const approvedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Division Head'
-        const approvedByDesignation = profile.designation || session?.user?.profile?.designation || 'Division Head'
+    async function handleDisapprove(requestId: string) {
+        try {
+            const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
+            const userData = profileResponse.data.data
+            const profile = userData?.profile || userData || {}
+            
+            const approvedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Division Head'
+            const approvedByDesignation = profile.designation || session?.user?.profile?.designation || 'Division Head'
 
-        const response = await axios.put('/api/pass_slip/update', {
-            requestId,
-            status: 'Disapproved',
-            approvedBy: session?.user?.id,
-            approvedByName: approvedByName,
-            approvedByDesignation: approvedByDesignation
-        })
-        
-        if (response.status === 200) {
-            alert('❌ Pass slip disapproved')
-            fetchPassSlipData()
+            const response = await axios.put('/api/pass_slip/update', {
+                requestId,
+                status: 'Disapproved',
+                approvedBy: session?.user?.id,
+                approvedByName: approvedByName,
+                approvedByDesignation: approvedByDesignation
+            })
+            
+            if (response.status === 200) {
+                alert('❌ Pass slip disapproved')
+                fetchPassSlipData()
+            }
+        } catch (error: any) {
+            console.error('Error disapproving pass slip:', error)
+            alert(error.response?.data?.message || '❌ Error disapproving pass slip')
         }
-    } catch (error: any) {
-        console.error('Error disapproving pass slip:', error)
-        alert(error.response?.data?.message || '❌ Error disapproving pass slip')
     }
-}
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setFilter(e.target.value)
@@ -135,7 +132,7 @@ async function handleDisapprove(requestId: string) {
     if (loading) {
         return (
             <div className={`flex flex-col w-full ${show ? 'overflow-hidden h-screen' : ''}`}>
-                <ContentHeader username={username} userId={session?.user?.id} />
+                <ContentHeader />
                 <div className='flex flex-col my-5 mx-40 bg-white flex-1 rounded-xl border-[1] border-black shadow-xl shadow-gray-500/30'>
                     <div className='flex justify-center items-center p-10'>
                         <p className='text-gray-500'>Loading...</p>
@@ -147,7 +144,7 @@ async function handleDisapprove(requestId: string) {
 
     return(
         <div className={`flex flex-col w-full bg-gray-200 ${show ? 'overflow-hidden h-screen' : ''}`}>
-            <ContentHeader username={username} userId={session?.user?.id} />
+            <ContentHeader />
             <div className='flex flex-col my-5 mx-40 bg-white flex-1 rounded-xl border-[1] border-black shadow-xl shadow-gray-500/30'>
                 <div className='flex justify-between items-center p-5 border-b-[1] border-gray-300'>
                     <div className='flex items-center gap-4'>

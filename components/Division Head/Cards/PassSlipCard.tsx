@@ -1,6 +1,9 @@
 // components/Division Head/Cards/PassSlipCard.tsx
 import Image from "next/image"
 import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
+import jsPDF from 'jspdf'
+import axios from 'axios'
 
 interface PassSlipCardProps {
     info: {
@@ -14,20 +17,22 @@ interface PassSlipCardProps {
         destination: string
         status: string
         userId?: string
-        username?: string
-        office?: string
+        name?: string           // ✅ COS-JO user's name
+        username?: string       // ✅ COS-JO user's username
+        employeeId?: string     // ✅ COS-JO user's employee ID
+        office?: string         // ✅ COS-JO user's office
+        division?: string       // ✅ COS-JO user's division
         type?: string
         approvedBy?: string
         approvedByName?: string
         approvedByDesignation?: string
-        // ✅ No reviewedBy - Division Head only approves
     }
     onApprove?: () => void
     onDisapprove?: () => void
 }
 
-
 export default function PassSlipCard({ info, onApprove, onDisapprove }: PassSlipCardProps) {
+    const { data: session } = useSession()
     const [startDate, setStartDate] = useState('')
     const [startDay, setStartDay] = useState('')
     const [startTime, setStartTime] = useState('')
@@ -95,7 +100,6 @@ export default function PassSlipCard({ info, onApprove, onDisapprove }: PassSlip
     const isApproved = info.status === 'Approved'
     const isDisapproved = info.status === 'Disapproved'
 
-    // ✅ Display status - map Pending Provincial to Pending
     const getDisplayStatus = (status: string) => {
         if (status === 'Pending Provincial') {
             return 'Pending'
@@ -106,7 +110,6 @@ export default function PassSlipCard({ info, onApprove, onDisapprove }: PassSlip
     const displayStatus = getDisplayStatus(info.status)
 
     const getStatusColor = (status: string) => {
-        // ✅ Use display status for color
         if (displayStatus === 'Approved') {
             return 'bg-green-100 text-green-700 border-2 border-green-600'
         }
@@ -122,6 +125,292 @@ export default function PassSlipCard({ info, onApprove, onDisapprove }: PassSlip
     const capitalizeFirstLetter = (name: string) => {
         if (!name) return ''
         return name.charAt(0).toUpperCase() + name.slice(1)
+    }
+
+    // ✅ Format date for PDF
+    const formatDateForPDF = (dateStr: string) => {
+        if (!dateStr) return ''
+        const date = new Date(dateStr)
+        return date.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        })
+    }
+
+    // ✅ Format time for PDF
+    const formatTimeForPDF = (dateStr: string) => {
+        if (!dateStr) return ''
+        const date = new Date(dateStr)
+        return date.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: true 
+        })
+    }
+
+    // ✅ Fetch user data from API - using /api/users/me endpoint
+    const fetchUserData = async () => {
+        try {
+            const response = await axios.get('/api/users/me')
+            const userData = response.data.data
+            console.log('📋 Fetched user data:', userData)
+            return userData
+        } catch (error) {
+            console.error('Error fetching user data:', error)
+            return {
+                id: session?.user?.id,
+                employeeId: (session?.user as any)?.employeeId || '',
+                profile: session?.user?.profile || {},
+                username: session?.user?.username || '',
+                email: session?.user?.email || '',
+                role: session?.user?.role || ''
+            }
+        }
+    }
+
+    // ✅ Generate Pass Slip PDF
+const generatePSPDF = async () => {
+    try {
+        // Load logo
+        let logoBase64 = null
+        try {
+            const response = await fetch('/upper-logo.png')
+            if (response.ok) {
+                const blob = await response.blob()
+                logoBase64 = await new Promise((resolve) => {
+                    const reader = new FileReader()
+                    reader.onload = () => resolve(reader.result)
+                    reader.readAsDataURL(blob)
+                })
+            }
+        } catch (error) {
+            console.error('Error loading logo:', error)
+        }
+
+        // ✅ Get COS-JO user data from the pass slip info (the person who submitted the request)
+        const employeeName = info.name || info.username || 'N/A'
+        const employeeId = info.employeeId || info.userId || (session?.user as any)?.employeeId || session?.user?.id?.slice(0, 8) || 'N/A'
+        const division = info.office || info.division || 'N/A'
+
+        const divisionName = info.approvedByName || 'Division Head'
+        const divisionDesignation = info.approvedByDesignation || 'Division Head'
+
+        console.log('📋 Employee Name (COS-JO):', employeeName)
+        console.log('📋 Employee ID (COS-JO):', employeeId)
+
+        const doc = new jsPDF('l', 'mm', 'a4')
+        const pageWidth = 297
+        const pageHeight = 210
+        const margin = 20
+        let yPos = 8
+
+
+            // Header with Logo
+            if (logoBase64) {
+                try {
+                    const imgWidth = 70
+                    const imgHeight = 40
+                    const imgX = (pageWidth - imgWidth) / 2
+                    const imgY = yPos - 5
+                    doc.addImage(logoBase64 as string, 'PNG', imgX, imgY, imgWidth, imgHeight)
+                    yPos += imgHeight + 5
+                } catch (error) {
+                    console.error('Error adding logo to PDF:', error)
+                    doc.setFontSize(11)
+                    doc.setFont('helvetica', 'normal')
+                    doc.text('Republic of the Philippines', pageWidth / 2, yPos, { align: 'center' })
+                    yPos += 5
+                    doc.text('Department of Trade and Industry', pageWidth / 2, yPos, { align: 'center' })
+                    yPos += 9
+                }
+            } else {
+                doc.setFontSize(11)
+                doc.setFont('helvetica', 'normal')
+                doc.text('Republic of the Philippines', pageWidth / 2, yPos, { align: 'center' })
+                yPos += 5
+                doc.text('Department of Trade and Industry', pageWidth / 2, yPos, { align: 'center' })
+                yPos += 9
+            }
+
+            // Title
+            doc.setFontSize(30)
+            doc.setFont('helvetica', 'bold')
+            doc.setTextColor(0, 0, 0)
+            doc.text('PASS SLIP', pageWidth / 2, yPos, { align: 'center' })
+            yPos += 8
+
+            // Disapproved status
+            if (displayStatus === 'Disapproved') {
+                doc.setTextColor(200, 0, 0)
+                doc.setFontSize(16)
+                doc.setFont('helvetica', 'bold')
+                doc.text('DISAPPROVED', pageWidth / 2, yPos, { align: 'center' })
+                yPos += 12
+                doc.setTextColor(0, 0, 0)
+            }
+
+            // Form fields
+            doc.setFontSize(11)
+            doc.setFont('helvetica', 'normal')
+
+            const dateValue = formatDateForPDF(info.startDate || info.date || new Date().toISOString())
+            doc.setFont('helvetica', 'bold')
+            doc.text('Date:', margin, yPos)
+            doc.setFont('helvetica', 'normal')
+            doc.text(dateValue, margin + 45, yPos)
+            yPos += 8
+
+            doc.setFont('helvetica', 'bold')
+            doc.text('Employee No.:', margin, yPos)
+            doc.setFont('helvetica', 'normal')
+            doc.text(employeeId, margin + 45, yPos)
+            yPos += 8
+
+            doc.setFont('helvetica', 'bold')
+            doc.text('Name of Employee:', margin, yPos)
+            doc.setFont('helvetica', 'normal')
+            doc.text(employeeName, margin + 45, yPos)
+            yPos += 8
+
+            doc.setFont('helvetica', 'bold')
+            doc.text('Division/Section:', margin, yPos)
+            doc.setFont('helvetica', 'normal')
+            doc.text(division, margin + 45, yPos)
+            yPos += 8
+
+            doc.setFont('helvetica', 'bold')
+            doc.text('Destination:', margin, yPos)
+            doc.setFont('helvetica', 'normal')
+            doc.text(info.destination || 'N/A', margin + 45, yPos)
+            yPos += 8
+
+            const departureTime = formatTimeForPDF(info.startDate || info.date || '')
+            doc.setFont('helvetica', 'bold')
+            doc.text('Departure Time:', margin, yPos)
+            doc.setFont('helvetica', 'normal')
+            doc.text(departureTime || 'N/A', margin + 45, yPos)
+            yPos += 8
+
+            doc.setFont('helvetica', 'bold')
+            doc.text('Purpose:', margin, yPos)
+            doc.setFont('helvetica', 'normal')
+            doc.text(info.purpose || 'N/A', margin + 45, yPos)
+            yPos += 12
+
+            doc.setFont('helvetica', 'normal')
+            doc.text('Permission is granted to leave office during office hours:', margin, yPos)
+            yPos += 10
+
+            // Checkboxes
+            const passSlipType = info.type || 'Official'
+            const checkboxStartX = margin + 5
+            const checkboxSpacing = 55
+
+            const drawCheckedBox = (x: number, y: number) => {
+                doc.setFillColor(0, 0, 0)
+                doc.rect(x, y - 4, 5, 5, 'F')
+                doc.setFillColor(255, 255, 255)
+            }
+
+            if (passSlipType === 'Official') {
+                drawCheckedBox(checkboxStartX, yPos)
+            } else {
+                doc.rect(checkboxStartX, yPos - 4, 5, 5)
+            }
+            doc.setFont('helvetica', 'normal')
+            doc.text('Official', checkboxStartX + 10, yPos)
+
+            const personalX = checkboxStartX + checkboxSpacing
+            if (passSlipType === 'Personal') {
+                drawCheckedBox(personalX, yPos)
+            } else {
+                doc.rect(personalX, yPos - 4, 5, 5)
+            }
+            doc.text('Personal', personalX + 10, yPos)
+
+            const emergencyX = personalX + checkboxSpacing
+            if (passSlipType === 'Emergency') {
+                drawCheckedBox(emergencyX, yPos)
+            } else {
+                doc.rect(emergencyX, yPos - 4, 5, 5)
+            }
+            doc.text('Emergency', emergencyX + 10, yPos)
+
+            yPos += 13
+
+            // Approved by
+            if (displayStatus === 'Disapproved') {
+                doc.setTextColor(200, 0, 0)
+                doc.setFont('helvetica', 'bold')
+                doc.text('Disapproved by:', margin, yPos)
+                yPos += 12
+                
+                doc.setFont('helvetica', 'bold')
+                doc.setFontSize(11)
+                doc.text(divisionName, margin + 10, yPos)
+                doc.setFontSize(11)
+                doc.setFont('helvetica', 'normal')
+                doc.text(divisionDesignation, margin + 10, yPos + 7)
+                
+                const nameWidth = doc.getTextWidth(divisionName)
+                doc.line(margin + 10, yPos + 1, margin + 10 + nameWidth, yPos + 1)
+                doc.setTextColor(0, 0, 0)
+                yPos += 24
+            } else {
+                doc.setFont('helvetica', 'bold')
+                doc.text('Approved by:', margin, yPos)
+                yPos += 12
+
+                doc.setFont('helvetica', 'bold')
+                doc.setFontSize(11)
+                doc.text(divisionName, margin + 10, yPos)
+                doc.setFontSize(11)
+                doc.setFont('helvetica', 'normal')
+                doc.text(divisionDesignation, margin + 10, yPos + 7)
+                
+                const nameWidth = doc.getTextWidth(divisionName)
+                doc.line(margin + 10, yPos + 1, margin + 10 + nameWidth, yPos + 1)
+                yPos += 16
+            }
+
+            const arrivalTime = formatTimeForPDF(info.endDate || info.date || '')
+            doc.setFont('helvetica', 'bold')
+            doc.text('Arrival Time:', margin, yPos)
+            doc.setFont('helvetica', 'normal')
+            doc.text(arrivalTime || 'N/A', margin + 45, yPos)
+            yPos += 8
+
+            doc.setFont('helvetica', 'bold')
+            doc.text('Guard on Duty:', margin, yPos)
+            doc.setFont('helvetica', 'normal')
+            doc.text('_________________________________', margin + 45, yPos)
+            
+            const now = new Date()
+            const printedDate = now.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            })
+            const printedTime = now.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: true 
+            })
+            
+            doc.setFontSize(8)
+            doc.setFont('helvetica', 'normal')
+            doc.setTextColor(150, 150, 150)
+            doc.text(`Printed: ${printedDate} ${printedTime}`, pageWidth - 55, pageHeight - 12)
+
+            const statusSuffix = displayStatus === 'Disapproved' ? '_DISAPPROVED' : ''
+            const fileName = `PassSlip${statusSuffix}_${employeeName.replace(/\s/g, '_')}_${dateValue.replace(/\s/g, '_')}.pdf`
+            doc.save(fileName)
+            
+        } catch (error) {
+            console.error('Error generating Pass Slip PDF:', error)
+            alert('Error generating Pass Slip PDF. Please try again.')
+        }
     }
 
     return(
@@ -167,13 +456,15 @@ export default function PassSlipCard({ info, onApprove, onDisapprove }: PassSlip
                             />
                         </>
                     )}
-                    {/* ✅ Show status badge only for Approved or Disapproved */}
                     {(isApproved || isDisapproved || isPendingProvincial) && (
                         <span className={`px-4 py-2 rounded-lg text-sm font-semibold ${getStatusColor(info.status)}`}>
                             {displayStatus}
                         </span>
                     )}
-                    <button className='flex text-white rounded-lg px-4 py-2 gap-2 cursor-pointer font-semibold bg-linear-to-r from-[rgba(0,20,121,1)] to-[rgba(3,7,61,1)]'>
+                    <button 
+                        onClick={generatePSPDF}
+                        className='flex text-white rounded-lg px-4 py-2 gap-2 cursor-pointer font-semibold bg-linear-to-r from-[rgba(0,20,121,1)] to-[rgba(3,7,61,1)]'
+                    >
                         <Image src='/print.svg' width={16} height={16} alt='print'/>
                         <p>Print</p>
                     </button>

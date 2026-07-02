@@ -43,59 +43,59 @@ export default function PassSlipContent({ username = 'User' }: PassSlipContentPr
         }
     }
 
-async function handleApprove(requestId: string) {
-    try {
-        const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
-        const userData = profileResponse.data.data
-        const profile = userData?.profile || userData || {}
-        
-        const reviewedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Provincial Director'
-        const reviewedByDesignation = profile.designation || session?.user?.profile?.designation || 'Provincial Trade and Industry Officer'
+    async function handleApprove(requestId: string) {
+        try {
+            const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
+            const userData = profileResponse.data.data
+            const profile = userData?.profile || userData || {}
+            
+            const reviewedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Provincial Director'
+            const reviewedByDesignation = profile.designation || session?.user?.profile?.designation || 'Provincial Trade and Industry Officer'
 
-        const response = await axios.put('/api/pass_slip/update', {
-            requestId,
-            status: 'Approved',
-            reviewedBy: session?.user?.id,
-            reviewedByName: reviewedByName,
-            reviewedByDesignation: reviewedByDesignation
-        })
-        
-        if (response.status === 200) {
-            alert('✅ Pass slip approved!')
-            fetchPassSlipData()
+            const response = await axios.put('/api/pass_slip/update', {
+                requestId,
+                status: 'Approved',
+                reviewedBy: session?.user?.id,
+                reviewedByName: reviewedByName,
+                reviewedByDesignation: reviewedByDesignation
+            })
+            
+            if (response.status === 200) {
+                alert('✅ Pass slip approved!')
+                fetchPassSlipData()
+            }
+        } catch (error: any) {
+            console.error('Error approving pass slip:', error)
+            alert(error.response?.data?.message || '❌ Error approving pass slip')
         }
-    } catch (error: any) {
-        console.error('Error approving pass slip:', error)
-        alert(error.response?.data?.message || '❌ Error approving pass slip')
     }
-}
 
-async function handleDisapprove(requestId: string) {
-    try {
-        const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
-        const userData = profileResponse.data.data
-        const profile = userData?.profile || userData || {}
-        
-        const reviewedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Provincial Director'
-        const reviewedByDesignation = profile.designation || session?.user?.profile?.designation || 'Provincial Trade and Industry Officer'
+    async function handleDisapprove(requestId: string) {
+        try {
+            const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
+            const userData = profileResponse.data.data
+            const profile = userData?.profile || userData || {}
+            
+            const reviewedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Provincial Director'
+            const reviewedByDesignation = profile.designation || session?.user?.profile?.designation || 'Provincial Trade and Industry Officer'
 
-        const response = await axios.put('/api/pass_slip/update', {
-            requestId,
-            status: 'Disapproved',
-            reviewedBy: session?.user?.id,
-            reviewedByName: reviewedByName,
-            reviewedByDesignation: reviewedByDesignation
-        })
-        
-        if (response.status === 200) {
-            alert('❌ Pass slip disapproved')
-            fetchPassSlipData()
+            const response = await axios.put('/api/pass_slip/update', {
+                requestId,
+                status: 'Disapproved',
+                reviewedBy: session?.user?.id,
+                reviewedByName: reviewedByName,
+                reviewedByDesignation: reviewedByDesignation
+            })
+            
+            if (response.status === 200) {
+                alert('❌ Pass slip disapproved')
+                fetchPassSlipData()
+            }
+        } catch (error: any) {
+            console.error('Error disapproving pass slip:', error)
+            alert(error.response?.data?.message || '❌ Error disapproving pass slip')
         }
-    } catch (error: any) {
-        console.error('Error disapproving pass slip:', error)
-        alert(error.response?.data?.message || '❌ Error disapproving pass slip')
     }
-}
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setFilter(e.target.value)
@@ -112,7 +112,7 @@ async function handleDisapprove(requestId: string) {
     if (loading) {
         return (
             <div className={`flex flex-col w-full bg-gray-200 ${show ? 'overflow-hidden h-screen' : ''}`}>
-                <ContentHeader username={username} userId={session?.user?.id} />
+                <ContentHeader />
                 <div className='flex flex-col my-5 mx-40 bg-white flex-1 rounded-xl border-[1] border-black shadow-xl shadow-gray-500/30'>
                     <div className='flex justify-center items-center p-10'>
                         <p className='text-gray-500'>Loading...</p>
@@ -124,7 +124,7 @@ async function handleDisapprove(requestId: string) {
 
     return(
         <div className={`flex flex-col w-full ${show ? 'overflow-hidden h-screen' : ''}`}>
-            <ContentHeader username={username} userId={session?.user?.id} />
+            <ContentHeader />
             <div className='flex flex-col my-5 mx-40 bg-white flex-1 rounded-xl border-[1] border-black shadow-xl shadow-gray-500/30'>
                 <div className='flex justify-between items-center p-5 border-b-[1] border-gray-300'>
                     <select 

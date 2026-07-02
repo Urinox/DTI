@@ -23,9 +23,9 @@ const nextConfig: NextConfig = {
     output: 'standalone',
 
     // ✅ Remove console logs in production (keeps errors and warnings)
-  /*compiler: {
+  compiler: {
        removeConsole: true,
-    },*/
+    },
 };
 
 export default nextConfig;

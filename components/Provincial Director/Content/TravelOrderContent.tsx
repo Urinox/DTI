@@ -27,7 +27,7 @@ export default function TravelOrderContent({ username = 'User' }: TravelOrderCon
             const response = await axios.get(`/api/travel_order/${session.user.id}`)
             const data = response.data.data || []
             
-            // ✅ Show ALL travel orders (Pending, Pending Provincial, Approved by Division Head, Approved, Disapproved)
+            // ✅ Show ALL travel orders
             const filteredData = data.filter((item: any) => {
                 const status = item.status || item.Status || ''
                 return status === 'Pending' || 
@@ -94,7 +94,7 @@ export default function TravelOrderContent({ username = 'User' }: TravelOrderCon
     if (loading) {
         return (
             <div className={`flex flex-col w-full bg-gray-200 ${show ? 'overflow-hidden h-screen' : ''}`}>
-                <ContentHeader username={username} userId={session?.user?.id} />
+                <ContentHeader />
                 <div className='flex flex-col my-5 mx-40 bg-white flex-1 rounded-xl border-[1] border-black shadow-xl shadow-gray-500/30'>
                     <div className='flex justify-center items-center p-10'>
                         <p className='text-gray-500'>Loading...</p>
@@ -106,7 +106,7 @@ export default function TravelOrderContent({ username = 'User' }: TravelOrderCon
 
     return(
         <div className={`flex flex-col w-full ${show ? 'overflow-hidden h-screen' : ''}`}>
-            <ContentHeader username={username} userId={session?.user?.id} />
+            <ContentHeader />
             <div className='flex flex-col my-5 mx-40 bg-white flex-1 rounded-xl border-[1] border-black shadow-xl shadow-gray-500/30'>
                 <div className='flex justify-between items-center p-5 border-b-[1] border-gray-300'>
                     <select 
@@ -117,7 +117,7 @@ export default function TravelOrderContent({ username = 'User' }: TravelOrderCon
                         <option>All</option>
                         <option>Pending</option>
                         <option>Approved</option>
-                        <option>Disapproved</option>  {/* ✅ Added Disapproved */}
+                        <option>Disapproved</option>
                     </select>
                     <span className='text-sm text-gray-500'>
                         {filteredData.length} {filteredData.length === 1 ? 'record' : 'records'}

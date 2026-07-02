@@ -43,6 +43,9 @@ export async function GET(
                             id: key,
                             ...user.pass_slips[key],
                             userId: uid,
+                            // ✅ Add name, employeeId, username, office, division
+                            name: profile.name || user.username || 'N/A',
+                            employeeId: user.employeeId || '',
                             username: user.username || 'Unknown',
                             office: office,
                             division: division
@@ -67,9 +70,26 @@ export async function GET(
         
         if (passSlipSnapshot.exists()) {
             const passSlipData = passSlipSnapshot.val()
+            // ✅ Also get the user's own data for COS-JO view
+            const userRef = ref(database, `users/${id}`)
+            const userSnapshot = await get(userRef)
+            let userData = {}
+            let profile = {}
+            if (userSnapshot.exists()) {
+                userData = userSnapshot.val()
+                profile = (userData as any).profile || {}
+            }
+            
             const records = Object.keys(passSlipData).map(key => ({
                 id: key,
-                ...passSlipData[key]
+                ...passSlipData[key],
+                // ✅ Add the user's own info for COS-JO view
+                userId: id,
+                name: (profile as any).name || (userData as any).username || 'N/A',
+                employeeId: (userData as any).employeeId || '',
+                username: (userData as any).username || 'Unknown',
+                office: (profile as any).office || (profile as any).division || '',
+                division: (profile as any).division || ''
             }))
             return NextResponse.json({ 
                 data: records, 
@@ -134,7 +154,7 @@ export async function POST(
         await set(newPassSlipRef, {
             startDate: startDate,
             endDate: endDate,
-            type: type || 'Official',  // ✅ Store the type
+            type: type || 'Official',
             purpose: purpose,
             destination: destination,
             status: 'Pending',
