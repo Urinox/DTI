@@ -347,11 +347,6 @@ const generatePSPDF = async () => {
                 minute: '2-digit',
                 hour12: true 
             })
-            
-            doc.setFontSize(8)
-            doc.setFont('helvetica', 'normal')
-            doc.setTextColor(150, 150, 150)
-            doc.text(`Printed: ${printedDate} ${printedTime}`, pageWidth - 55, pageHeight - 12)
 
             const statusSuffix = displayStatus === 'Disapproved' ? '_DISAPPROVED' : ''
             const fileName = `PassSlip${statusSuffix}_${employeeName.replace(/\s/g, '_')}_${dateValue.replace(/\s/g, '_')}.pdf`
