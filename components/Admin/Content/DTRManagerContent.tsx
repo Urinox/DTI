@@ -4,6 +4,8 @@ import Image from "next/image"
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useSession } from "next-auth/react"
 import axios from "axios"
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 interface Employee {
     id: string
@@ -554,7 +556,7 @@ export default function DTRManagerContent() {
                             record.timeOutAM || '', 
                             record.timeInPM || '', 
                             record.timeOutPM || ''
-                        ), // ✅ Calculate total hours
+                        ),
                         status: displayStatus,
                         locationInAM: record.locationInAM || '',
                         locationOutAM: record.locationOutAM || '',
@@ -587,6 +589,401 @@ export default function DTRManagerContent() {
             isLoadingRef.current = false
         }
     }
+
+// ✅ Keep your existing getAdminAndSubUsers function as-is
+async function getAdminAndSubUsers() {
+    try {
+        // Try the public users endpoint first
+        const response = await axios.get('/api/users')
+        const users = response.data.data || []
+        
+        let adminUser = null
+        let subUser = null
+        
+        for (const user of users) {
+            if (user.role === 'admin' || user.role === 'Admin' || user.role === 'super_admin') {
+                adminUser = {
+                    name: user.profile?.name || user.username || 'Admin',
+                    designation: user.profile?.designation || 'Admin'
+                }
+            }
+            if (user.role === 'sub' || user.role === 'Sub' || user.role === 'provincial-director') {
+                subUser = {
+                    name: user.profile?.name || user.username || 'Provincial Director',
+                    designation: user.profile?.designation || 'Provincial Trade and Industry Officer'
+                }
+            }
+        }
+        
+        console.log('📋 Admin user found:', adminUser)
+        console.log('📋 Provincial Director found:', subUser)
+        
+        return { adminUser, subUser }
+    } catch (error: any) {
+        console.error('Error fetching from /api/users:', error.message)
+        
+        // If /api/users fails, try to get from the admin endpoint (if user is admin)
+        try {
+            const response = await axios.get('/api/admin/employees')
+            const users = response.data.data || []
+            
+            let adminUser = null
+            let subUser = null
+            
+            for (const user of users) {
+                if (user.role === 'admin' || user.role === 'Admin' || user.role === 'super_admin') {
+                    adminUser = {
+                        name: user.profile?.name || user.username || 'Admin',
+                        designation: user.profile?.designation || 'Admin'
+                    }
+                }
+                if (user.role === 'sub' || user.role === 'Sub' || user.role === 'provincial-director') {
+                    subUser = {
+                        name: user.profile?.name || user.username || 'Provincial Director',
+                        designation: user.profile?.designation || 'Provincial Trade and Industry Officer'
+                    }
+                }
+            }
+            
+            return { adminUser, subUser }
+        } catch (adminError: any) {
+            console.error('Error fetching from admin endpoint:', adminError.message)
+            // Final fallback - return default values
+            return {
+                adminUser: { 
+                    name: 'Admin', 
+                    designation: 'Admin' 
+                },
+                subUser: { 
+                    name: 'Provincial Director', 
+                    designation: 'Provincial Trade and Industry Officer' 
+                }
+            }
+        }
+    }
+}
+
+async function generateDTRPDF() {
+    // Get admin and sub users
+    const { adminUser, subUser } = await getAdminAndSubUsers()
+    
+    console.log('🔵 generateDTRPDF called!')
+    console.log('📅 selectedMonth:', selectedMonth)
+    console.log('📋 dtrRecords count:', dtrRecords.length)
+    
+    if (dtrRecords.length === 0) {
+        setMessage('⚠️ No DTR records to print')
+        return
+    }
+    
+    const doc = new jsPDF('p', 'mm', 'a4')
+    const pageWidth = 210
+    const margin = 15
+    let yPos = 15
+
+    // ✅ Get employee data from the DTR records (not from session)
+    const firstRecord = dtrRecords[0]
+    const userName = firstRecord?.employeeName || 'Employee'
+    
+    // ✅ Get designation from employees array
+    const employeeData = employees.find(emp => emp.name === userName)
+    const position = employeeData?.designation || 'COS-JO'
+    
+    const monthDisplay = new Date(selectedMonth + '-01').toLocaleDateString('en-US', { year: 'numeric', month: 'long' })
+
+    const [year, monthNum] = selectedMonth.split('-').map(Number)
+    const daysInMonth = new Date(year, monthNum, 0).getDate()
+
+    // Helper functions
+    const addUnderlinedText = (text: string, x: number, y: number) => {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'bold')
+        const textWidth = doc.getTextWidth(text)
+        doc.text(text, x, y)
+        doc.line(x, y + 0.5, x + textWidth, y + 0.5)
+    }
+
+    const addText = (text: string, x: number, y: number, align: 'left' | 'center' | 'right' = 'left', fontSize = 10, bold = false) => {
+        doc.setFontSize(fontSize)
+        doc.setFont('helvetica', bold ? 'bold' : 'normal')
+        doc.text(text, x, y, { align })
+    }
+
+    // ✅ Helper to truncate long locations
+    const truncateLocation = (location: string, maxLength: number = 12) => {
+        if (!location) return ''
+        return location.length > maxLength ? location.substring(0, maxLength) + '...' : location
+    }
+
+    // ✅ Helper to format time with location
+    const formatWithLocation = (time: string, location: string) => {
+        if (!time && !location) return ''
+        if (time && !location) return time
+        if (!time && location) return `${truncateLocation(location)}`
+        return `${time}\n${truncateLocation(location)}`
+    }
+
+    addText('Name:', margin, yPos, 'left', 10, false)
+    addUnderlinedText(userName, margin + 22, yPos)
+    yPos += 5
+
+    addText('Position:', margin, yPos, 'left', 10, false)
+    addUnderlinedText(position, margin + 29, yPos)
+    yPos += 5
+
+    addText('For the Month of:', margin, yPos, 'left', 10, false)
+    addUnderlinedText(monthDisplay, margin + 42, yPos)
+    yPos += 5
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text('Official Hours for Regular Days:', margin, yPos)
+    const regularTextWidth = doc.getTextWidth('Official Hours for Regular Days:')
+    doc.setFont('helvetica', 'bold')
+    doc.text(' No flexi time', margin + regularTextWidth, yPos)
+    yPos += 6
+
+    // ✅ Calculate stats from records (same format as COS-JOS)
+    let tardiness = 0, undertime = 0, overtime = 0, sickLeave = 0, vacationLeave = 0, personalCalamity = 0
+
+    dtrRecords.forEach(record => {
+        if (record.status === 'Tardiness') tardiness++
+        else if (record.status === 'Undertime') undertime++
+        else if (record.status === 'Overtime') overtime++
+        else if (record.status === 'Sick Leave') sickLeave++
+        else if (record.status === 'Vacation Leave') vacationLeave++
+        else if (record.status === 'Personal Calamity') personalCalamity++
+    })
+
+    const statsText = `T: ${tardiness}  U: ${undertime}  OT: ${overtime}  PC: ${personalCalamity}  SL: ${sickLeave}  VL: ${vacationLeave}`
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.text(statsText, margin, yPos)
+    yPos += 4
+
+    // ✅ TABLE - Generate ALL days with locations
+    const tableData = []
+    const recordsByDate: Record<string, DTRRecord[]> = {}
+    
+    dtrRecords.forEach(record => {
+        if (!recordsByDate[record.date]) {
+            recordsByDate[record.date] = []
+        }
+        recordsByDate[record.date].push(record)
+    })
+
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        const records = recordsByDate[dateStr] || []
+        
+        let timeInAM = ''
+        let timeOutAM = ''
+        let timeInPM = ''
+        let timeOutPM = ''
+        let locInAM = ''
+        let locOutAM = ''
+        let locInPM = ''
+        let locOutPM = ''
+        let remarks = ''
+
+        const date = new Date(year, monthNum - 1, day)
+        const isWeekend = date.getDay() === 0 || date.getDay() === 6
+        
+        if (isWeekend) {
+            remarks = date.getDay() === 0 ? 'Sunday' : 'Saturday'
+        }
+
+        if (records.length > 0) {
+            const record = records[0]
+            timeInAM = record.timeInAM || ''
+            timeOutAM = record.timeOutAM || ''
+            timeInPM = record.timeInPM || ''
+            timeOutPM = record.timeOutPM || ''
+            
+            locInAM = record.locationInAM || ''
+            locOutAM = record.locationOutAM || ''
+            locInPM = record.locationInPM || ''
+            locOutPM = record.locationOutPM || ''
+            
+            if (record.leaveDetails && record.leaveDetails.length > 0) {
+                const remarksList = []
+                for (const detail of record.leaveDetails) {
+                    let typeDisplay = ''
+                    if (detail.type === 'Personal') typeDisplay = 'Personal Calamity'
+                    else if (detail.type === 'Emergency') typeDisplay = 'Sick Leave'
+                    else if (detail.type === 'Official') typeDisplay = 'Vacation Leave'
+                    else if (detail.type === 'Overtime') typeDisplay = 'Overtime'
+                    else if (detail.type === 'Travel Order') typeDisplay = 'Travel Order'
+                    else typeDisplay = detail.type
+                    
+                    let remarkText = typeDisplay
+                    if (detail.purpose) {
+                        remarkText += `: ${detail.purpose}`
+                    }
+                    if (detail.type === 'Travel Order' && detail.startDate && detail.endDate) {
+                        remarkText += ` (${detail.startDate} - ${detail.endDate})`
+                    }
+                    if (detail.type !== 'Travel Order' && detail.startTime && detail.endTime) {
+                        remarkText += ` (${detail.startTime} - ${detail.endTime})`
+                    }
+                    remarksList.push(remarkText)
+                }
+                remarks = remarksList.join('; ')
+            } else if (record.status && record.status !== 'Present' && !isWeekend) {
+                remarks = record.status
+            }
+            
+            // ✅ Use record.status instead of leaveStatus
+            if (!remarks && record.status && !isWeekend && record.status !== 'Present') {
+                remarks = record.status
+            }
+        }
+
+        tableData.push([
+            String(day).padStart(2, '0'),
+            formatWithLocation(timeInAM, locInAM),
+            formatWithLocation(timeOutAM, locOutAM),
+            formatWithLocation(timeInPM, locInPM),
+            formatWithLocation(timeOutPM, locOutPM),
+            '', // Overtime In
+            '', // Overtime Out
+            remarks
+        ])
+    }
+
+    console.log('📊 Generated', tableData.length, 'rows for the table')
+
+    // ✅ Generate the table with multi-page support (EXACT same as COS-JOS)
+    autoTable(doc, {
+        startY: yPos,
+        head: [
+            ['DATE', 'MORNING', '', 'AFTERNOON', '', 'OVERTIME', '', 'REMARKS'],
+            ['', 'IN', 'OUT', 'IN', 'OUT', 'IN', 'OUT', '']
+        ],
+        body: tableData,
+        theme: 'grid',
+        pageBreak: 'auto',
+        styles: {
+            fontSize: 7,
+            cellPadding: 1,
+            halign: 'center',
+            valign: 'middle',
+            lineColor: [0, 0, 0],
+            lineWidth: 0.1,
+            textColor: [0, 0, 0],
+        },
+        headStyles: {
+            fillColor: [230, 230, 230],
+            textColor: [0, 0, 0],
+            fontSize: 7,
+            fontStyle: 'bold',
+            halign: 'center',
+            lineColor: [0, 0, 0],
+            lineWidth: 0.1,
+            cellPadding: 1,
+        },
+        columnStyles: {
+            0: { cellWidth: 12, halign: 'center' },
+            1: { cellWidth: 20, halign: 'center' },
+            2: { cellWidth: 20, halign: 'center' },
+            3: { cellWidth: 20, halign: 'center' },
+            4: { cellWidth: 20, halign: 'center' },
+            5: { cellWidth: 16, halign: 'center' },
+            6: { cellWidth: 16, halign: 'center' },
+            7: { cellWidth: 'auto', halign: 'left' },
+        },
+        didParseCell: function(data: any) {
+            if (data.section === 'head' && data.row.index === 0) {
+                if (data.column.index === 1) {
+                    data.cell.colSpan = 2
+                    data.cell.text = ['MORNING']
+                    data.cell.styles.halign = 'center'
+                }
+                if (data.column.index === 3) {
+                    data.cell.colSpan = 2
+                    data.cell.text = ['AFTERNOON']
+                    data.cell.styles.halign = 'center'
+                }
+                if (data.column.index === 5) {
+                    data.cell.colSpan = 2
+                    data.cell.text = ['OVERTIME']
+                    data.cell.styles.halign = 'center'
+                }
+            }
+        },
+        didDrawPage: function(data: any) {
+            const pageHeight = doc.internal.pageSize.height
+            const pageWidth = 210
+            const pageNumber = doc.internal.pages.length - 1
+            
+            doc.setFontSize(8)
+            doc.setFont('helvetica', 'normal')
+            doc.text(`Page ${pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' })
+        }
+    })
+
+    const finalY = (doc as any).lastAutoTable.finalY || yPos - 100
+
+    // ✅ FOOTER - EXACT same as COS-JOS
+    let footerY = finalY + 5
+    const lineSpacing = 4
+    const pageHeight = doc.internal.pageSize.height
+    const footerHeight = 70
+
+    if (footerY + footerHeight > pageHeight - 15) {
+        doc.addPage()
+        footerY = 20
+    }
+
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.text('I CERTIFY on my honor that the above is true and correct report on the hours of work performed, record of which was made daily', margin, footerY)
+    footerY += lineSpacing
+    doc.text('at the time of arrival and departure.', margin, footerY)
+    footerY += 12
+
+    doc.setFont('helvetica', 'bold')
+    doc.text(userName, margin, footerY)
+    doc.setFont('helvetica', 'normal')
+    doc.text('Employee', margin, footerY + 4)
+    const empNameWidth = doc.getTextWidth(userName)
+    doc.line(margin, footerY + 0.5, margin + empNameWidth, footerY + 0.5)
+    footerY += 20
+
+    doc.setFont('helvetica', 'normal')
+    doc.text('Verified as to the prescribed office hours.', margin, footerY)
+    const pdLabelX = pageWidth - 80
+    doc.text('Noted as to the prescribed office hours.', pdLabelX, footerY)
+
+    footerY += 16
+
+    doc.setFont('helvetica', 'bold')
+    const adminName = adminUser?.name || 'Admin'
+    doc.text(adminName, margin, footerY)
+    doc.setFont('helvetica', 'normal')
+    const adminDesignation = adminUser?.designation || 'Admin'
+    doc.text(adminDesignation, margin, footerY + 4)
+    const adminNameWidth = doc.getTextWidth(adminName)
+    doc.line(margin, footerY + 0.5, margin + adminNameWidth, footerY + 0.5)
+
+    const pdX = pageWidth - 80
+    doc.setFont('helvetica', 'bold')
+    const pdName = subUser?.name || 'Provincial Director'
+    doc.text(pdName, pdX, footerY)
+    doc.setFont('helvetica', 'normal')
+    const pdDesignation = subUser?.designation || 'Provincial Trade and Industry Officer'
+    doc.text(pdDesignation, pdX, footerY + 4)
+    const pdNameWidth = doc.getTextWidth(pdName)
+    doc.line(pdX, footerY + 0.5, pdX + pdNameWidth, footerY + 0.5)
+
+    const totalPages = doc.internal.pages.length - 1
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Page ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: 'center' })
+
+    const monthStr = selectedMonth.replace('-', '_')
+    doc.save(`DTR_${userName}_${monthStr}.pdf`)
+}
 
     const goToPage = (page: number) => {
         if (page >= 1 && page <= totalPages) {
@@ -801,14 +1198,16 @@ export default function DTRManagerContent() {
             <ContentHeader/>
             <div className='flex flex-col bg-white py-5 my-5 mx-10 rounded-xl border-[1] border-black'>
                 <div className='flex justify-between items-center px-5 pb-3 border-b border-gray-200'>
-                    <p className='font-bold text-xl'>Manage DTR</p>
                     <div className='flex items-center gap-4'>
+                        <p className='font-bold text-xl'>Manage DTR</p>
                         <input 
                             type='month' 
                             value={selectedMonth}
                             onChange={handleMonthChange}
                             className='border border-gray-300 rounded-lg px-3 py-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm'
                         />
+                    </div>
+                    <div className='flex items-center gap-4'>
                         <div className='flex items-center gap-2'>
                             <select
                                 value={selectedEmployee}
@@ -832,6 +1231,19 @@ export default function DTRManagerContent() {
                                 className='border border-gray-300 rounded-lg px-3 py-1 outline-0 focus:ring-2 focus:ring-blue-500 text-sm w-48'
                             />
                         </div>
+                        <button 
+                            onClick={generateDTRPDF}
+                            className='flex items-center gap-2 bg-gradient-to-r from-[rgba(0,20,121,1)] to-[rgba(3,7,61,1)] py-1.5 px-4 rounded-lg text-white cursor-pointer hover:opacity-90 transition-opacity text-sm'
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                                <path d="M18 9H6"></path>
+                                <path d="M18 13H6"></path>
+                                <path d="M18 17H6"></path>
+                                <rect x="2" y="9" width="20" height="13" rx="2" ry="2"></rect>
+                            </svg>
+                            <p className='font-semibold'>Print DTR</p>
+                        </button>
                     </div>
                 </div>
 
@@ -900,78 +1312,77 @@ export default function DTRManagerContent() {
                 )}
             </div>
 
-{selectedDetail && (
-    <div 
-        className="fixed inset-0 bg-gray-500/50 flex items-center justify-center z-50" 
-        onClick={closeDetailModal}
-    >
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-800">
-                    {selectedDetail.record.status} Details
-                </h3>
-                <button 
+            {selectedDetail && (
+                <div 
+                    className="fixed inset-0 bg-gray-500/50 flex items-center justify-center z-50" 
                     onClick={closeDetailModal}
-                    className="text-gray-500 hover:text-gray-700 text-xl"
                 >
-                    ✕
-                </button>
-            </div>
-            <div className="border-t border-gray-200 pt-4">
-                <p className="text-sm text-gray-600 mb-2">
-                    <span className="font-semibold">Employee:</span> {selectedDetail.record.employeeName}
-                </p>
-                <p className="text-sm text-gray-600 mb-2">
-                    <span className="font-semibold">Date:</span> {selectedDetail.record.date}
-                </p>
-                {selectedDetail.details.map((detail: any, index: number) => {
-                    let displayType = ''
-                    if (detail.type === 'Personal') displayType = 'Personal Calamity'
-                    else if (detail.type === 'Emergency') displayType = 'Sick Leave'
-                    else if (detail.type === 'Official') displayType = 'Vacation Leave'
-                    else if (detail.type === 'Overtime') displayType = 'Overtime'
-                    else if (detail.type === 'Travel Order') displayType = 'Travel Order'
-                    else displayType = detail.type
-                    
-                    return (
-                        <div key={index} className="bg-gray-50 rounded p-3 mb-3">
-                            <p className="text-sm font-semibold text-gray-800">{displayType}</p>
-                            {detail.purpose && (
-                                <p className="text-sm text-gray-600 mt-1">
-                                    <span className="font-medium">Purpose:</span> {detail.purpose}
-                                </p>
-                            )}
-                            {detail.destination && detail.type !== 'Overtime' && (
-                                <p className="text-sm text-gray-600">
-                                    <span className="font-medium">Destination:</span> {detail.destination}
-                                </p>
-                            )}
-                            {detail.type === 'Travel Order' && detail.startDate && detail.endDate && (
-                                <p className="text-sm text-gray-600">
-                                    <span className="font-medium">Dates:</span> {detail.startDate} - {detail.endDate}
-                                </p>
-                            )}
-                            {(detail.type !== 'Travel Order' && detail.startTime && detail.endTime) && (
-                                <p className="text-sm text-gray-600">
-                                    <span className="font-medium">Time:</span> {detail.startTime} - {detail.endTime}
-                                </p>
-                            )}
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-800">
+                                {selectedDetail.record.status} Details
+                            </h3>
+                            <button 
+                                onClick={closeDetailModal}
+                                className="text-gray-500 hover:text-gray-700 text-xl"
+                            >
+                                ✕
+                            </button>
                         </div>
-                    )
-                })}
-            </div>
-            <div className="mt-4 flex justify-end">
-                <button
-                    onClick={closeDetailModal}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                    Close
-                </button>
-            </div>
-        </div>
-    </div>
-)}
-
+                        <div className="border-t border-gray-200 pt-4">
+                            <p className="text-sm text-gray-600 mb-2">
+                                <span className="font-semibold">Employee:</span> {selectedDetail.record.employeeName}
+                            </p>
+                            <p className="text-sm text-gray-600 mb-2">
+                                <span className="font-semibold">Date:</span> {selectedDetail.record.date}
+                            </p>
+                            {selectedDetail.details.map((detail: any, index: number) => {
+                                let displayType = ''
+                                if (detail.type === 'Personal') displayType = 'Personal Calamity'
+                                else if (detail.type === 'Emergency') displayType = 'Sick Leave'
+                                else if (detail.type === 'Official') displayType = 'Vacation Leave'
+                                else if (detail.type === 'Overtime') displayType = 'Overtime'
+                                else if (detail.type === 'Travel Order') displayType = 'Travel Order'
+                                else displayType = detail.type
+                                
+                                return (
+                                    <div key={index} className="bg-gray-50 rounded p-3 mb-3">
+                                        <p className="text-sm font-semibold text-gray-800">{displayType}</p>
+                                        {detail.purpose && (
+                                            <p className="text-sm text-gray-600 mt-1">
+                                                <span className="font-medium">Purpose:</span> {detail.purpose}
+                                            </p>
+                                        )}
+                                        {detail.destination && detail.type !== 'Overtime' && (
+                                            <p className="text-sm text-gray-600">
+                                                <span className="font-medium">Destination:</span> {detail.destination}
+                                            </p>
+                                        )}
+                                        {detail.type === 'Travel Order' && detail.startDate && detail.endDate && (
+                                            <p className="text-sm text-gray-600">
+                                                <span className="font-medium">Dates:</span> {detail.startDate} - {detail.endDate}
+                                            </p>
+                                        )}
+                                        {(detail.type !== 'Travel Order' && detail.startTime && detail.endTime) && (
+                                            <p className="text-sm text-gray-600">
+                                                <span className="font-medium">Time:</span> {detail.startTime} - {detail.endTime}
+                                            </p>
+                                        )}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                        <div className="mt-4 flex justify-end">
+                            <button
+                                onClick={closeDetailModal}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
