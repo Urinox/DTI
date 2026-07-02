@@ -1,4 +1,4 @@
-// app/api/admin/employees/route.ts
+// app/api/users/route.ts
 import { NextRequest, NextResponse } from "next/server"
 import { database, ref, get } from '@/lib/firebase'
 import { auth } from '@/auth'
@@ -6,7 +6,6 @@ import { auth } from '@/auth'
 export async function GET(request: NextRequest) {
     try {
         const session = await auth()
-        
         if (!session?.user?.id) {
             return NextResponse.json({ 
                 data: [], 
@@ -15,44 +14,41 @@ export async function GET(request: NextRequest) {
             }, { status: 401 })
         }
 
-        // Only admin can access this
-        if (session.user.role !== 'admin') {
-            return NextResponse.json({ 
-                data: [], 
-                message: "Unauthorized - Admin only",
-                status: 403 
-            }, { status: 403 })
-        }
-
         const usersRef = ref(database, 'users')
         const usersSnapshot = await get(usersRef)
-        const employees: any[] = []
+        const users: any[] = []
         
         if (usersSnapshot.exists()) {
             const usersData = usersSnapshot.val()
             for (const [uid, userData] of Object.entries(usersData)) {
                 const user = userData as any
-                employees.push({
-                    id: uid,
-                    ...user,
-                    // ✅ Ensure employeeId is explicitly included
-                    employeeId: user.employeeId || '',
-                    profile: user.profile || {}
-                })
+                // Only return admin and sub users (limited data for security)
+                if (user.role === 'admin' || user.role === 'Admin' || 
+                    user.role === 'super_admin' ||
+                    user.role === 'sub' || user.role === 'Sub' || 
+                    user.role === 'provincial-director') {
+                    users.push({
+                        id: uid,
+                        role: user.role,
+                        username: user.username || '',
+                        email: user.email || '',
+                        profile: user.profile || {},
+                        employeeId: user.employeeId || ''
+                    })
+                }
             }
         }
         
-        // ✅ Debug log to verify data
-        console.log('📋 Employees API response:', JSON.stringify(employees, null, 2))
+        console.log('📋 /api/users - Found users:', users.length)
         
         return NextResponse.json({ 
-            data: employees, 
+            data: users, 
             message: "Success",
             status: 200 
         })
         
     } catch (error: any) {
-        console.error("❌ Error fetching employees:", error)
+        console.error("❌ Error fetching users:", error)
         return NextResponse.json({ 
             data: [], 
             message: "Server error: " + error.message,

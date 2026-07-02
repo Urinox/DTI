@@ -133,6 +133,33 @@ export default function DTRManagerContent() {
     const endIndex = startIndex + itemsPerPage
     const currentRecords = useMemo(() => filteredRecords.slice(startIndex, endIndex), [filteredRecords, startIndex, endIndex])
 
+    // ✅ Calculate total hours function
+    function calculateDayTotal(timeInAM: string, timeOutAM: string, timeInPM: string, timeOutPM: string): string {
+        let totalMinutes = 0
+        
+        if (timeInAM && timeOutAM) {
+            const [inH, inM] = timeInAM.split(':').map(Number)
+            const [outH, outM] = timeOutAM.split(':').map(Number)
+            let mins = (outH * 60 + outM) - (inH * 60 + inM)
+            if (mins < 0) mins += 24 * 60
+            totalMinutes += mins
+        }
+        
+        if (timeInPM && timeOutPM) {
+            const [inH, inM] = timeInPM.split(':').map(Number)
+            const [outH, outM] = timeOutPM.split(':').map(Number)
+            let mins = (outH * 60 + outM) - (inH * 60 + inM)
+            if (mins < 0) mins += 24 * 60
+            totalMinutes += mins
+        }
+        
+        if (totalMinutes === 0) return '-'
+        
+        const hours = Math.floor(totalMinutes / 60)
+        const minutes = totalMinutes % 60
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+    }
+
     async function fetchEmployees() {
         try {
             if (!session?.user?.id) return
@@ -140,19 +167,19 @@ export default function DTRManagerContent() {
             const response = await axios.get('/api/admin/employees')
             const data = response.data.data || []
             
-            const formattedEmployees = data
-                .filter((user: any) => user.role === 'cos' || user.role === 'COS-JO')
-                .map((user: any, index: number) => ({
-                    id: user.id || '',
-                    employeeId: (index + 1).toString().padStart(5, '0'),
-                    username: user.username || '',
-                    name: user.profile?.name || user.username || 'Unknown',
-                    email: user.email || '',
-                    designation: user.profile?.designation || 'N/A',
-                    division: user.profile?.division || '',
-                    office: user.profile?.office || '',
-                    role: user.role || 'cos'
-                }))
+            const cosUsers = data.filter((user: any) => user.role === 'cos' || user.role === 'COS-JO')
+            
+            const formattedEmployees = cosUsers.map((user: any, index: number) => ({
+                id: user.id || '',
+                employeeId: user.employeeId || (index + 1).toString().padStart(5, '0'),
+                username: user.username || '',
+                name: user.profile?.name || user.username || 'Unknown',
+                email: user.email || '',
+                designation: user.profile?.designation || 'N/A',
+                division: user.profile?.division || '',
+                office: user.profile?.office || '',
+                role: user.role || 'cos'
+            }))
             
             setEmployees(formattedEmployees)
             console.log(`✅ Loaded ${formattedEmployees.length} COS-JO employees`)
@@ -449,15 +476,10 @@ export default function DTRManagerContent() {
                 const records = dtrResult?.records || []
                 
                 console.log(`🔍 Filtering records for ${employee.name} with month: ${month}`)
-                console.log(`🔍 All record dates:`, records.map((r: any) => r.date))
                 
                 const monthRecords = records.filter((record: any) => {
                     const recordMonth = record.date?.substring(0, 7)
-                    const matches = recordMonth === month
-                    if (!matches) {
-                        console.log(`⏭️ Skipping record date ${record.date} (month: ${recordMonth})`)
-                    }
-                    return matches
+                    return recordMonth === month
                 })
                 
                 console.log(`📊 ${employee.name}: ${monthRecords.length} records in ${month}`)
@@ -465,10 +487,6 @@ export default function DTRManagerContent() {
                 for (const record of monthRecords) {
                     const leaveDetails = getLeaveDetailsForDateOptimized(record.date, passSlips, overtimes, travelOrders)
                     let displayStatus = record.status || 'Present'
-                    
-                    if (leaveDetails.length > 0) {
-                        console.log(`📋 Leave details for ${record.date}:`, leaveDetails)
-                    }
                     
                     if (leaveDetails.length > 0) {
                         let foundStatus = false
@@ -531,7 +549,12 @@ export default function DTRManagerContent() {
                         timeOutAM: record.timeOutAM ? formatTimeTo12Hour(record.timeOutAM) : '',
                         timeInPM: record.timeInPM ? formatTimeTo12Hour(record.timeInPM) : '',
                         timeOutPM: record.timeOutPM ? formatTimeTo12Hour(record.timeOutPM) : '',
-                        totalHours: record.totalHours || '',
+                        totalHours: calculateDayTotal(
+                            record.timeInAM || '', 
+                            record.timeOutAM || '', 
+                            record.timeInPM || '', 
+                            record.timeOutPM || ''
+                        ), // ✅ Calculate total hours
                         status: displayStatus,
                         locationInAM: record.locationInAM || '',
                         locationOutAM: record.locationOutAM || '',
@@ -877,75 +900,78 @@ export default function DTRManagerContent() {
                 )}
             </div>
 
-            {/* Detail Modal */}
-            {selectedDetail && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={closeDetailModal}>
-                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-gray-800">
-                                {selectedDetail.record.status} Details
-                            </h3>
-                            <button 
-                                onClick={closeDetailModal}
-                                className="text-gray-500 hover:text-gray-700 text-xl"
-                            >
-                                ✕
-                            </button>
+{selectedDetail && (
+    <div 
+        className="fixed inset-0 bg-gray-500/50 flex items-center justify-center z-50" 
+        onClick={closeDetailModal}
+    >
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-gray-800">
+                    {selectedDetail.record.status} Details
+                </h3>
+                <button 
+                    onClick={closeDetailModal}
+                    className="text-gray-500 hover:text-gray-700 text-xl"
+                >
+                    ✕
+                </button>
+            </div>
+            <div className="border-t border-gray-200 pt-4">
+                <p className="text-sm text-gray-600 mb-2">
+                    <span className="font-semibold">Employee:</span> {selectedDetail.record.employeeName}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">
+                    <span className="font-semibold">Date:</span> {selectedDetail.record.date}
+                </p>
+                {selectedDetail.details.map((detail: any, index: number) => {
+                    let displayType = ''
+                    if (detail.type === 'Personal') displayType = 'Personal Calamity'
+                    else if (detail.type === 'Emergency') displayType = 'Sick Leave'
+                    else if (detail.type === 'Official') displayType = 'Vacation Leave'
+                    else if (detail.type === 'Overtime') displayType = 'Overtime'
+                    else if (detail.type === 'Travel Order') displayType = 'Travel Order'
+                    else displayType = detail.type
+                    
+                    return (
+                        <div key={index} className="bg-gray-50 rounded p-3 mb-3">
+                            <p className="text-sm font-semibold text-gray-800">{displayType}</p>
+                            {detail.purpose && (
+                                <p className="text-sm text-gray-600 mt-1">
+                                    <span className="font-medium">Purpose:</span> {detail.purpose}
+                                </p>
+                            )}
+                            {detail.destination && detail.type !== 'Overtime' && (
+                                <p className="text-sm text-gray-600">
+                                    <span className="font-medium">Destination:</span> {detail.destination}
+                                </p>
+                            )}
+                            {detail.type === 'Travel Order' && detail.startDate && detail.endDate && (
+                                <p className="text-sm text-gray-600">
+                                    <span className="font-medium">Dates:</span> {detail.startDate} - {detail.endDate}
+                                </p>
+                            )}
+                            {(detail.type !== 'Travel Order' && detail.startTime && detail.endTime) && (
+                                <p className="text-sm text-gray-600">
+                                    <span className="font-medium">Time:</span> {detail.startTime} - {detail.endTime}
+                                </p>
+                            )}
                         </div>
-                        <div className="border-t border-gray-200 pt-4">
-                            <p className="text-sm text-gray-600 mb-2">
-                                <span className="font-semibold">Employee:</span> {selectedDetail.record.employeeName}
-                            </p>
-                            <p className="text-sm text-gray-600 mb-2">
-                                <span className="font-semibold">Date:</span> {selectedDetail.record.date}
-                            </p>
-                            {selectedDetail.details.map((detail: any, index: number) => {
-                                let displayType = ''
-                                if (detail.type === 'Personal') displayType = 'Personal Calamity'
-                                else if (detail.type === 'Emergency') displayType = 'Sick Leave'
-                                else if (detail.type === 'Official') displayType = 'Vacation Leave'
-                                else if (detail.type === 'Overtime') displayType = 'Overtime'
-                                else if (detail.type === 'Travel Order') displayType = 'Travel Order'
-                                else displayType = detail.type
-                                
-                                return (
-                                    <div key={index} className="bg-gray-50 rounded p-3 mb-3">
-                                        <p className="text-sm font-semibold text-gray-800">{displayType}</p>
-                                        {detail.purpose && (
-                                            <p className="text-sm text-gray-600 mt-1">
-                                                <span className="font-medium">Purpose:</span> {detail.purpose}
-                                            </p>
-                                        )}
-                                        {detail.destination && detail.type !== 'Overtime' && (
-                                            <p className="text-sm text-gray-600">
-                                                <span className="font-medium">Destination:</span> {detail.destination}
-                                            </p>
-                                        )}
-                                        {detail.type === 'Travel Order' && detail.startDate && detail.endDate && (
-                                            <p className="text-sm text-gray-600">
-                                                <span className="font-medium">Dates:</span> {detail.startDate} - {detail.endDate}
-                                            </p>
-                                        )}
-                                        {(detail.type !== 'Travel Order' && detail.startTime && detail.endTime) && (
-                                            <p className="text-sm text-gray-600">
-                                                <span className="font-medium">Time:</span> {detail.startTime} - {detail.endTime}
-                                            </p>
-                                        )}
-                                    </div>
-                                )
-                            })}
-                        </div>
-                        <div className="mt-4 flex justify-end">
-                            <button
-                                onClick={closeDetailModal}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                    )
+                })}
+            </div>
+            <div className="mt-4 flex justify-end">
+                <button
+                    onClick={closeDetailModal}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+)}
+
         </div>
     )
 }

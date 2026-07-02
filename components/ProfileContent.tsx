@@ -12,7 +12,8 @@ interface ProfileData {
     division: string
     designation: string
     office: string
-    username: string  // ✅ Added username
+    username: string
+    employeeId: string  // ✅ Added employeeId
 }
 
 export default function ProfileContent() {
@@ -27,7 +28,8 @@ export default function ProfileContent() {
         division: '',
         designation: '',
         office: '',
-        username: ''  // ✅ Added username
+        username: '',
+        employeeId: ''  // ✅ Added employeeId
     })
     const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -55,7 +57,8 @@ export default function ProfileContent() {
                     division: profile.division || '',
                     designation: profile.designation || '',
                     office: profile.office || '',
-                    username: userData.username || ''  // ✅ Added username
+                    username: userData.username || '',
+                    employeeId: userData.employeeId || ''  // ✅ Get employeeId from user data
                 })
             }
         } catch (error) {
@@ -205,7 +208,7 @@ export default function ProfileContent() {
                     
                     <div>
                         <p className='text-xl font-bold'>{profileData.name || 'No Name'}</p>
-                        <p className='text-gray-600'>ID: #{session?.user?.id}</p>
+                        <p className='text-gray-600'>Employee ID: #{profileData.employeeId || 'Not assigned'}</p>
                         {profileData.username && <p className='text-gray-800 text-sm'>@{profileData.username}</p>}
                         <button onClick={() => setShow(!show)} className='flex items-center gap-2 bg-red-800 text-white rounded-lg px-5 py-1 cursor-pointer font-bold text-sm mt-1'>
                             <Image src='/user_edit.svg' width={16} height={16} alt='edit'/>
