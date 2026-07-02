@@ -17,10 +17,15 @@ interface PassSlipCardProps {
         username?: string
         office?: string
         type?: string
+        approvedBy?: string
+        approvedByName?: string
+        approvedByDesignation?: string
+        // ✅ No reviewedBy - Division Head only approves
     }
     onApprove?: () => void
     onDisapprove?: () => void
 }
+
 
 export default function PassSlipCard({ info, onApprove, onDisapprove }: PassSlipCardProps) {
     const [startDate, setStartDate] = useState('')

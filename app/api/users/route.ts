@@ -22,11 +22,13 @@ export async function GET(request: NextRequest) {
             const usersData = usersSnapshot.val()
             for (const [uid, userData] of Object.entries(usersData)) {
                 const user = userData as any
-                // Only return admin and sub users (limited data for security)
+                // ✅ Include division users as well
                 if (user.role === 'admin' || user.role === 'Admin' || 
                     user.role === 'super_admin' ||
                     user.role === 'sub' || user.role === 'Sub' || 
-                    user.role === 'provincial-director') {
+                    user.role === 'provincial-director' ||
+                    user.role === 'division' || user.role === 'Division' || 
+                    user.role === 'division-head' || user.role === 'Division Head') {
                     users.push({
                         id: uid,
                         role: user.role,

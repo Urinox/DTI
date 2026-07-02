@@ -43,39 +43,59 @@ export default function PassSlipContent({ username = 'User' }: PassSlipContentPr
         }
     }
 
-    async function handleApprove(requestId: string) {
-        try {
-            const response = await axios.put('/api/pass_slip/update', {
-                requestId,
-                status: 'Approved'
-            })
-            
-            if (response.status === 200) {
-                alert('✅ Pass slip approved successfully!')
-                fetchPassSlipData()
-            }
-        } catch (error: any) {
-            console.error('Error approving pass slip:', error)
-            alert(error.response?.data?.message || '❌ Error approving pass slip')
-        }
-    }
+async function handleApprove(requestId: string) {
+    try {
+        const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
+        const userData = profileResponse.data.data
+        const profile = userData?.profile || userData || {}
+        
+        const reviewedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Provincial Director'
+        const reviewedByDesignation = profile.designation || session?.user?.profile?.designation || 'Provincial Trade and Industry Officer'
 
-    async function handleDisapprove(requestId: string) {
-        try {
-            const response = await axios.put('/api/pass_slip/update', {
-                requestId,
-                status: 'Disapproved'
-            })
-            
-            if (response.status === 200) {
-                alert('❌ Pass slip disapproved')
-                fetchPassSlipData()
-            }
-        } catch (error: any) {
-            console.error('Error disapproving pass slip:', error)
-            alert(error.response?.data?.message || '❌ Error disapproving pass slip')
+        const response = await axios.put('/api/pass_slip/update', {
+            requestId,
+            status: 'Approved',
+            reviewedBy: session?.user?.id,
+            reviewedByName: reviewedByName,
+            reviewedByDesignation: reviewedByDesignation
+        })
+        
+        if (response.status === 200) {
+            alert('✅ Pass slip approved!')
+            fetchPassSlipData()
         }
+    } catch (error: any) {
+        console.error('Error approving pass slip:', error)
+        alert(error.response?.data?.message || '❌ Error approving pass slip')
     }
+}
+
+async function handleDisapprove(requestId: string) {
+    try {
+        const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
+        const userData = profileResponse.data.data
+        const profile = userData?.profile || userData || {}
+        
+        const reviewedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Provincial Director'
+        const reviewedByDesignation = profile.designation || session?.user?.profile?.designation || 'Provincial Trade and Industry Officer'
+
+        const response = await axios.put('/api/pass_slip/update', {
+            requestId,
+            status: 'Disapproved',
+            reviewedBy: session?.user?.id,
+            reviewedByName: reviewedByName,
+            reviewedByDesignation: reviewedByDesignation
+        })
+        
+        if (response.status === 200) {
+            alert('❌ Pass slip disapproved')
+            fetchPassSlipData()
+        }
+    } catch (error: any) {
+        console.error('Error disapproving pass slip:', error)
+        alert(error.response?.data?.message || '❌ Error disapproving pass slip')
+    }
+}
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setFilter(e.target.value)

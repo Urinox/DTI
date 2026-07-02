@@ -16,7 +16,7 @@ export async function PUT(
             }, { status: 401 })
         }
 
-        // ✅ Check for both 'division-head' and 'division' roles
+        // ✅ Check user role
         const userRole = session.user.role
         const isDivisionHead = userRole === 'division-head' || userRole === 'division'
         const isProvincialDirector = userRole === 'provincial-director' || userRole === 'sub'
@@ -35,8 +35,10 @@ export async function PUT(
             }, { status: 403 })
         }
 
-        const { requestId, status } = await request.json()
+        const { requestId, status, approvedBy, approvedByName, approvedByDesignation, reviewedBy, reviewedByName, reviewedByDesignation } = await request.json()
         console.log('📋 Update request - requestId:', requestId, 'status:', status)
+        console.log('📋 Approved by:', { approvedBy, approvedByName, approvedByDesignation })
+        console.log('📋 Reviewed by:', { reviewedBy, reviewedByName, reviewedByDesignation })
         
         if (!requestId || !status) {
             return NextResponse.json({ 
@@ -74,14 +76,46 @@ export async function PUT(
         console.log('✅ Found pass slip for user:', foundUserId)
 
         const passSlipRef = ref(database, `users/${foundUserId}/pass_slips/${requestId}`)
-        await update(passSlipRef, {
-            status: status,
-            reviewedBy: session.user.username || session.user.email,
-            reviewedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        })
         
-        console.log('✅ Pass slip updated successfully')
+        // ✅ Build update object based on who is approving/reviewing
+        const updateData: any = {
+            status: status,
+            updatedAt: new Date().toISOString()
+        }
+        
+        // ✅ If Division Head is approving, set approvedBy fields
+        if (isDivisionHead || approvedBy) {
+            updateData.approvedBy = approvedBy || session.user.id
+            updateData.approvedByName = approvedByName || session.user.profile?.name || session.user.username || 'Division Head'
+            updateData.approvedByDesignation = approvedByDesignation || session.user.profile?.designation || 'Division Head'
+            updateData.approvedAt = new Date().toISOString()
+            console.log('✅ Setting approvedBy fields:', updateData.approvedByName, updateData.approvedByDesignation)
+        }
+        
+        // ✅ If Provincial Director is reviewing, set reviewedBy fields
+        if (isProvincialDirector || reviewedBy) {
+            updateData.reviewedBy = reviewedBy || session.user.id
+            updateData.reviewedByName = reviewedByName || session.user.profile?.name || session.user.username || 'Provincial Director'
+            updateData.reviewedByDesignation = reviewedByDesignation || session.user.profile?.designation || 'Provincial Trade and Industry Officer'
+            updateData.reviewedAt = new Date().toISOString()
+            console.log('✅ Setting reviewedBy fields:', updateData.reviewedByName, updateData.reviewedByDesignation)
+        }
+        
+        // ✅ Fallback: If neither specific role but admin, set both
+        if (isAdmin && !isDivisionHead && !isProvincialDirector) {
+            updateData.approvedBy = session.user.id
+            updateData.approvedByName = session.user.profile?.name || session.user.username || 'Admin'
+            updateData.approvedByDesignation = session.user.profile?.designation || 'Admin'
+            updateData.approvedAt = new Date().toISOString()
+            updateData.reviewedBy = session.user.id
+            updateData.reviewedByName = session.user.profile?.name || session.user.username || 'Admin'
+            updateData.reviewedByDesignation = session.user.profile?.designation || 'Admin'
+            updateData.reviewedAt = new Date().toISOString()
+        }
+
+        await update(passSlipRef, updateData)
+        
+        console.log('✅ Pass slip updated successfully with data:', updateData)
         
         return NextResponse.json({ 
             data: { id: requestId },

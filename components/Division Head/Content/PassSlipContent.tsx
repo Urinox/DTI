@@ -35,62 +35,84 @@ export default function PassSlipContent({ username = 'User' }: PassSlipContentPr
         }
     }
 
-async function fetchPassSlipData() {
+    async function fetchPassSlipData() {
+        try {
+            if (!session?.user?.id) return
+            
+            console.log('🔍 Fetching pass slips for user:', session.user.id)
+            console.log('🔍 User role:', session.user.role)
+            
+            const response = await axios.get(`/api/pass_slip/${session.user.id}`)
+            console.log('📋 Full API Response:', response.data)
+            
+            const data = response.data.data || []
+            console.log('📋 Pass slip data:', data)
+            console.log('📋 Data length:', data.length)
+            
+            setPassSlipData(data)
+        } catch (error) {
+            console.error('Error fetching pass slip data:', error)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+async function handleApprove(requestId: string) {
     try {
-        if (!session?.user?.id) return
+        // ✅ Get the current user's profile info (Division Head)
+        const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
+        const userData = profileResponse.data.data
+        const profile = userData?.profile || userData || {}
         
-        console.log('🔍 Fetching pass slips for user:', session.user.id)
-        console.log('🔍 User role:', session.user.role)
+        const approvedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Division Head'
+        const approvedByDesignation = profile.designation || session?.user?.profile?.designation || 'Division Head'
+
+        console.log('📋 Approving as Division Head:', approvedByName, approvedByDesignation)
+
+        const response = await axios.put('/api/pass_slip/update', {
+            requestId,
+            status: 'Pending Provincial',
+            approvedBy: session?.user?.id,
+            approvedByName: approvedByName,
+            approvedByDesignation: approvedByDesignation
+        })
         
-        const response = await axios.get(`/api/pass_slip/${session.user.id}`)
-        console.log('📋 Full API Response:', response.data)
-        
-        const data = response.data.data || []
-        console.log('📋 Pass slip data:', data)
-        console.log('📋 Data length:', data.length)
-        
-        // ✅ Show ALL pass slips (no filter)
-        setPassSlipData(data)
-    } catch (error) {
-        console.error('Error fetching pass slip data:', error)
-    } finally {
-        setLoading(false)
+        if (response.status === 200) {
+            alert('✅ Pass slip approved and sent to Provincial Director!')
+            fetchPassSlipData()
+        }
+    } catch (error: any) {
+        console.error('Error approving pass slip:', error)
+        alert(error.response?.data?.message || '❌ Error approving pass slip')
     }
 }
 
-    async function handleApprove(requestId: string) {
-        try {
-            const response = await axios.put('/api/pass_slip/update', {
-                requestId,
-                status: 'Pending Provincial'
-            })
-            
-            if (response.status === 200) {
-                alert('✅ Pass slip approved and sent to Provincial Director!')
-                fetchPassSlipData()
-            }
-        } catch (error: any) {
-            console.error('Error approving pass slip:', error)
-            alert(error.response?.data?.message || '❌ Error approving pass slip')
-        }
-    }
+async function handleDisapprove(requestId: string) {
+    try {
+        const profileResponse = await axios.get(`/api/profile/${session?.user?.id}`)
+        const userData = profileResponse.data.data
+        const profile = userData?.profile || userData || {}
+        
+        const approvedByName = profile.name || session?.user?.profile?.name || session?.user?.name || 'Division Head'
+        const approvedByDesignation = profile.designation || session?.user?.profile?.designation || 'Division Head'
 
-    async function handleDisapprove(requestId: string) {
-        try {
-            const response = await axios.put('/api/pass_slip/update', {
-                requestId,
-                status: 'Disapproved'
-            })
-            
-            if (response.status === 200) {
-                alert('❌ Pass slip disapproved')
-                fetchPassSlipData()
-            }
-        } catch (error: any) {
-            console.error('Error disapproving pass slip:', error)
-            alert(error.response?.data?.message || '❌ Error disapproving pass slip')
+        const response = await axios.put('/api/pass_slip/update', {
+            requestId,
+            status: 'Disapproved',
+            approvedBy: session?.user?.id,
+            approvedByName: approvedByName,
+            approvedByDesignation: approvedByDesignation
+        })
+        
+        if (response.status === 200) {
+            alert('❌ Pass slip disapproved')
+            fetchPassSlipData()
         }
+    } catch (error: any) {
+        console.error('Error disapproving pass slip:', error)
+        alert(error.response?.data?.message || '❌ Error disapproving pass slip')
     }
+}
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setFilter(e.target.value)
@@ -104,7 +126,6 @@ async function fetchPassSlipData() {
                    itemStatus.toLowerCase() === filter.toLowerCase()
         })
 
-    // ✅ Filter by user's office
     const filteredData = statusFilteredData.filter(item => {
         const itemOffice = item.office || ''
         if (!userOffice) return true

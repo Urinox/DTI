@@ -43,7 +43,9 @@ export default function PassSlipPopup({
                 endDate: endDateTime.toISOString(),
                 type: type,
                 purpose: purpose,
-                destination: destination
+                destination: destination,
+                approvedBy: '', // Will be filled when Division Head approves
+                reviewedBy: '' // Will be filled when Provincial Director reviews
             })
 
             if (response.status === 200) {
